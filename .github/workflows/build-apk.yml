@@ -18,6 +18,12 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Index des gares (données ouvertes IDFM)
+        run: |
+          mkdir -p app/src/main/assets
+          python3 tools/build_station_index.py app/src/main/assets/stations.json || echo "::warning::Index des gares non généré, l'app utilisera PRIM"
+          ls -la app/src/main/assets || true
+
       - name: Compiler l'APK
         env:
           PRIM_API_KEY: ${{ secrets.PRIM_API_KEY }}

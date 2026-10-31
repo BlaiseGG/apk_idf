@@ -18,13 +18,19 @@ import java.time.Instant
 import kotlin.math.cos
 import kotlin.math.sqrt
 
-class PrimRepository(private val api: PrimApi = Network.primApi) {
+class PrimRepository(
+    private val api: PrimApi = Network.primApi,
+    /** Index local des gares (null = non embarqué : tout passe par PRIM). */
+    private val index: suspend () -> StationIndex? = { null },
+) {
 
     suspend fun searchStops(apiKey: String, query: String): List<StopItem> = call {
+        index()?.let { return@call it.search(query) }
         api.searchPlaces(requireKey(apiKey), query).places.mapNotNull { it.toStop() }
     }
 
     suspend fun nearbyStops(apiKey: String, lat: Double, lon: Double): List<StopItem> = call {
+        index()?.let { return@call it.nearby(lat, lon) }
         api.placesNearby(requireKey(apiKey), lon = lon, lat = lat).placesNearby
             .mapNotNull { it.toStop() }
             .sortedBy { it.distanceMeters ?: Int.MAX_VALUE }
@@ -35,6 +41,7 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
      * à moins de [CONNECTION_METERS] m (ex. RER E à Magenta depuis Gare du Nord).
      */
     suspend fun linesAt(apiKey: String, stop: StopItem): List<LineItem> = call {
+        index()?.linesAt(stop.id, CONNECTION_METERS)?.let { return@call it }
         val key = requireKey(apiKey)
         coroutineScope {
             val own = async { api.linesOfStopArea(key, stop.id).lines.map { it.toLine() } }
@@ -78,6 +85,7 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         val key = requireKey(apiKey)
         val stopPoints = runCatching { api.stopPoints(key, stopAreaId, line.id).stopPoints }.getOrDefault(emptyList())
         val refs = stopPoints.map { IdMapper.stopPointRef(it.id) }.distinct()
+            .ifEmpty { index()?.fallbackRefs(stopAreaId, line.id).orEmpty().filter { it.contains("StopPoint") } }
         val stationIds = stopPoints.map { it.id }.toSet()
         val stationDistance = stopPoints.mapNotNull { it.coord.km() }.minOrNull()
         val stationNames = stopPoints.flatMap { listOfNotNull(it.name, it.stopArea?.name) }.map(IdMapper::normalize).toSet()
@@ -262,9 +270,19 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         val served = trajet.directionMissions.map(IdMapper::normalize).toSet()
         val excluded = trajet.excludedMissions.map(IdMapper::normalize).toSet()
         val key = requireKey(apiKey)
-        val live = fetchVisits(key, trajet.stopAreaId, trajet.monitoringRefs)
+        var visits = fetchVisits(key, trajet.stopAreaId, trajet.monitoringRefs).filter { matchesLine(it, trajet.lineId) }
+        if (visits.isEmpty()) {
+            // Certains arrêts ne répondent qu'au niveau du quai ou de la zone d'arrêt (ex. métro à Châtelet) :
+            // on essaie les autres identifiants connus grâce à l'index local.
+            val extra = index()?.fallbackRefs(trajet.stopAreaId, trajet.lineId).orEmpty() - trajet.monitoringRefs.toSet()
+            if (extra.isNotEmpty()) {
+                visits = runCatching { fetchVisits(key, trajet.stopAreaId, extra, fallbackToArea = false) }
+                    .getOrDefault(emptyList())
+                    .filter { matchesLine(it, trajet.lineId) }
+            }
+        }
+        val live = visits
             .asSequence()
-            .filter { matchesLine(it, trajet.lineId) }
             .mapNotNull { v ->
                 val mission = v.journey?.journeyNote?.firstValue()?.let(IdMapper::normalize)
                 when {
@@ -318,7 +336,12 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
 
     // ------------------------------------------------------------------
 
-    private suspend fun fetchVisits(apiKey: String, stopAreaId: String, refs: List<String>): List<MonitoredStopVisitDto> {
+    private suspend fun fetchVisits(
+        apiKey: String,
+        stopAreaId: String,
+        refs: List<String>,
+        fallbackToArea: Boolean = true,
+    ): List<MonitoredStopVisitDto> {
         val targets = refs.ifEmpty { listOf(IdMapper.stopAreaRef(stopAreaId)) }
         val results = coroutineScope {
             targets.map { ref -> async { runCatching { api.stopMonitoring(apiKey, ref) } } }.awaitAll()
@@ -326,7 +349,7 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         val ok = results.mapNotNull { it.getOrNull() }
         if (ok.isEmpty()) throw results.first().exceptionOrNull()!!
         val visits = ok.flatMap { r -> r.siri?.serviceDelivery?.deliveries.orEmpty().flatMap { it.visits } }
-        if (visits.isEmpty() && refs.isNotEmpty()) {
+        if (visits.isEmpty() && refs.isNotEmpty() && fallbackToArea) {
             // Repli sur la zone d'arrêt complète si les quais ne renvoient rien.
             return runCatching {
                 api.stopMonitoring(apiKey, IdMapper.stopAreaRef(stopAreaId))
