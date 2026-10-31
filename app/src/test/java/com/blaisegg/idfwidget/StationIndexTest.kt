@@ -17,7 +17,8 @@ class StationIndexTest {
           [71410,"Gare du Nord (Paris)",48.88095,2.35568,[[1,[],[43000]],[0,[22007],[462941]],[3,[999],[5000]]]],
           [73732,"Magenta (Paris)",48.88182,2.35810,[[2,[],[43200]]]],
           [60797,"Grigny Centre (Grigny)",48.6538,2.3957,[[1,[],[43132]]]],
-          [6000,"Gare du Nord - Dunkerque (Paris)",48.8810,2.3550,[[3,[998],[5001]]]]]}
+          [6000,"Gare du Nord - Dunkerque (Paris)",48.8810,2.3550,[[3,[998],[5001]]]]],
+         "patterns":[[1,["VOPA"],12,[60797,71410]],[1,["ROPO"],5,[71410,60797]]]}
     """.trimIndent()
 
     private val index = StationIndex.parse(json)
@@ -48,9 +49,17 @@ class StationIndexTest {
     }
 
     @Test
+    fun parcours_gtfs() {
+        val p = index.patternsThrough("stop_area:IDFM:60797", "line:IDFM:C01742")
+        assertEquals(2, p.size)
+        assertEquals(listOf("VOPA"), p.first { it.zdcs.first() == 60797 }.missions)
+        assertEquals("Gare du Nord", index.stationByZdc(71410)!!.shortName)
+    }
+
+    @Test
     fun references_temps_reel() {
         assertEquals(
-            listOf("STIF:StopPoint:Q:22007:", "STIF:StopArea:SP:462941:"),
+            listOf("STIF:StopPoint:Q:22007:", "STIF:StopPoint:Q:462941:", "STIF:StopArea:SP:462941:"),
             index.fallbackRefs("stop_area:IDFM:71410", "line:IDFM:C01374"),
         )
     }

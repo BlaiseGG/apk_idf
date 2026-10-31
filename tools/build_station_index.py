@@ -12,7 +12,7 @@ Format de sortie (compact) :
   {"v":1, "lines":[[id, code, nom, catégorie, libellé_mode, couleur, couleur_texte]],
    "stations":[[zdc, nom, lat, lon, [[idx_ligne, [arr...], [zda...]], ...]]]}
 """
-import csv, gzip, io, json, re, sys, urllib.request
+import csv, gzip, io, json, os, re, sys, urllib.request
 from collections import defaultdict
 
 BASE = "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/{}/exports/csv?delimiter=%3B"
@@ -141,6 +141,7 @@ def main(out):
 
     # Doublons (même RER/métro/tram sous deux identifiants) : on garde la ligne qui dessert
     # le plus de gares (la ligne principale), en fusionnant ses quais.
+    merged = {}  # code doublon -> code conservé
     served = defaultdict(int)
     for by_line in st.values():
         for i in by_line:
@@ -160,7 +161,7 @@ def main(out):
                     a2, z2 = by_line.pop(i)
                     by_line[keep][0].update(a2)
                     by_line[keep][1].update(z2)
-                    print("   doublon fusionné :", lines[i][0], "->", lines[keep][0], lines[keep][2])
+                    merged[lines[i][0]] = lines[keep][0]
     stations = []
     for zdc, by_line in st.items():
         name, t = zdc_info.get(zdc, ("", ""))
@@ -173,13 +174,89 @@ def main(out):
         stations.append([zdc, label, round(lat, 6), round(lon, 6),
                          [[i, sorted(a), sorted(z)] for i, (a, z) in ls]])
 
+    print("doublons fusionnés :", dict(sorted(set(merged.items()))))
+    known = {s[0] for s in stations}
+    try:
+        patterns = build_patterns(line_idx, merged, known)
+    except Exception as e:  # le GTFS est un bonus : sans lui, l'app interroge PRIM pour les directions
+        print("::warning::GTFS non traité :", e)
+        patterns = []
+
     with open(out, "w", encoding="utf-8") as f:
-        json.dump({"v": 1, "lines": lines, "stations": stations}, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"OK : {len(stations)} gares/arrêts, {len(lines)} lignes, {missing} associations ignorées -> {out}")
+        json.dump({"v": 2, "lines": lines, "stations": stations, "patterns": patterns}, f,
+                  ensure_ascii=False, separators=(",", ":"))
+    print(f"OK : {len(stations)} gares/arrêts, {len(lines)} lignes, {len(patterns)} parcours, "
+          f"{missing} associations ignorées -> {out}")
     for probe in (71264, 71410, 60797, 474151, 73794):
         s = next((x for x in stations if x[0] == probe), None)
         if s:
             print("  ", s[1], "->", ", ".join(f"{lines[i][2]}[{lines[i][0]}]" for i, _, _ in s[4] if lines[i][3] != "BUS"))
+
+
+GTFS_URL = "https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip"
+MISSION = re.compile(r"^[A-Z]{4}$")
+
+
+def build_patterns(line_idx, merged, known_zdc):
+    """Parcours distincts de chaque ligne (suite ordonnée de gares) depuis le GTFS IDFM,
+    avec les codes mission RER qui les empruntent. Sert à proposer les directions et les
+    gares desservies sans appel PRIM."""
+    import tempfile, zipfile
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    with urllib.request.urlopen(GTFS_URL, timeout=900) as r:
+        while chunk := r.read(1 << 20):
+            tmp.write(chunk)
+    tmp.close()
+    z = zipfile.ZipFile(tmp.name)
+
+    def rows(name):
+        return csv.DictReader(io.TextIOWrapper(z.open(name), encoding="utf-8-sig"))
+
+    stop_zdc = {}
+    for r in rows("stops.txt"):
+        zdc = last_int(r["parent_station"]) if r["parent_station"] else None
+        if zdc is None and r["location_type"] == "1":
+            zdc = last_int(r["stop_id"])
+        if zdc is not None:
+            stop_zdc[r["stop_id"]] = zdc
+    trip_info = {}
+    for r in rows("trips.txt"):
+        code = r["route_id"].split(":")[-1]
+        code = merged.get(code, code)
+        if code in line_idx:
+            h = (r["trip_headsign"] or "").strip()
+            trip_info[r["trip_id"]] = (line_idx[code], h if MISSION.match(h) else "")
+    print(f"GTFS : {len(trip_info)} circulations retenues")
+
+    acc = {}  # (ligne, gares) -> [missions, nb]
+    def flush(trip, seq):
+        if trip not in trip_info or len(seq) < 2:
+            return
+        seq.sort()
+        zdcs = []
+        for _, zdc in seq:
+            if zdc in known_zdc and (not zdcs or zdcs[-1] != zdc):
+                zdcs.append(zdc)
+        if len(zdcs) < 2:
+            return
+        li, mission = trip_info[trip]
+        e = acc.setdefault((li, tuple(zdcs)), [set(), 0])
+        if mission:
+            e[0].add(mission)
+        e[1] += 1
+
+    cur, seq = None, []
+    for r in rows("stop_times.txt"):
+        t = r["trip_id"]
+        if t != cur:
+            flush(cur, seq)
+            cur, seq = t, []
+        zdc = stop_zdc.get(r["stop_id"])
+        if zdc is not None:
+            seq.append((int(r["stop_sequence"]), zdc))
+    flush(cur, seq)
+    os.unlink(tmp.name)
+    return [[li, sorted(m), n, list(zdcs)] for (li, zdcs), (m, n) in acc.items()]
 
 
 if __name__ == "__main__":

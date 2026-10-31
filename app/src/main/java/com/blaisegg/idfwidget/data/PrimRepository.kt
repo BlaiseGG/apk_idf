@@ -83,27 +83,39 @@ class PrimRepository(
      */
     suspend fun lineAtStop(apiKey: String, stopAreaId: String, line: LineItem): LineAtStop = coroutineScope {
         val key = requireKey(apiKey)
-        val stopPoints = runCatching { api.stopPoints(key, stopAreaId, line.id).stopPoints }.getOrDefault(emptyList())
-        val refs = stopPoints.map { IdMapper.stopPointRef(it.id) }.distinct()
-            .ifEmpty { index()?.fallbackRefs(stopAreaId, line.id).orEmpty().filter { it.contains("StopPoint") } }
+        val idx = index()
+        val here = idx?.station(stopAreaId)
+        // 0. Hors ligne : parcours tirés des horaires IDFM embarqués (aucun appel au référentiel PRIM).
+        var infos = idx?.let { localRouteInfos(it, stopAreaId, line.id) }.orEmpty()
+
+        val stopPoints = if (infos.isNotEmpty() && here != null) emptyList() else
+            runCatching { api.stopPoints(key, stopAreaId, line.id).stopPoints }.getOrDefault(emptyList())
+        val candidateRefs = stopPoints.map { IdMapper.stopPointRef(it.id) }.distinct()
+            .ifEmpty { idx?.fallbackRefs(stopAreaId, line.id).orEmpty() }
         val stationIds = stopPoints.map { it.id }.toSet()
-        val stationDistance = stopPoints.mapNotNull { it.coord.km() }.minOrNull()
-        val stationNames = stopPoints.flatMap { listOfNotNull(it.name, it.stopArea?.name) }.map(IdMapper::normalize).toSet()
+        val stationDistance = stopPoints.mapNotNull { it.coord.km() }.minOrNull() ?: here?.let { km(it.lat, it.lon) }
+        val stationNames = (stopPoints.flatMap { listOfNotNull(it.name, it.stopArea?.name) } +
+            listOfNotNull(here?.name, here?.shortName)).map(IdMapper::normalize).toSet()
         val inParis = stationDistance != null && stationDistance < PARIS_RADIUS_KM
 
-        val liveLabels = async {
-            runCatching {
-                fetchVisits(key, stopAreaId, refs)
+        // Temps réel interrogé une fois sur chaque identifiant candidat : on ne garde que ceux qui
+        // répondent pour cette ligne (moins d'appels ensuite à chaque rafraîchissement du widget).
+        val probes = candidateRefs.map { ref ->
+            async {
+                val visits = runCatching { api.stopMonitoring(key, ref) }.getOrNull()
+                    ?.siri?.serviceDelivery?.deliveries.orEmpty().flatMap { it.visits }
                     .filter { matchesLine(it, line.id) }
-                    .mapNotNull { v ->
-                        val j = v.journey ?: return@mapNotNull null
-                        j.destinationName.firstValue() ?: j.directionName.firstValue()
-                    }
-            }.getOrDefault(emptyList())
+                ref to visits
+            }
+        }.awaitAll()
+        val refs = probes.filter { it.second.isNotEmpty() }.map { it.first }.ifEmpty { candidateRefs }
+        val liveLabels = probes.flatMap { it.second }.mapNotNull { v ->
+            val j = v.journey ?: return@mapNotNull null
+            j.destinationName.firstValue() ?: j.directionName.firstValue()
         }
 
-        // 1. Méthode précise : les vrais prochains départs de cet arrêt, une circulation par mission.
-        var infos = missionsFromDepartures(key, stopAreaId, line.id, stationIds, stationDistance)
+        // 1. Sinon : les vrais prochains départs de cet arrêt, une circulation par mission.
+        if (infos.isEmpty()) infos = missionsFromDepartures(key, stopAreaId, line.id, stationIds, stationDistance)
         // 2. Repli (ex. la nuit) : quelques circulations de chaque parcours.
         if (infos.isEmpty()) {
             val routes = runCatching { api.routes(key, stopAreaId, line.id).routes }.getOrDefault(emptyList())
@@ -150,7 +162,7 @@ class PrimRepository(
             )
         }
         // Destinations annoncées en temps réel mais inconnues du référentiel.
-        for (label in liveLabels.await()) {
+        for (label in liveLabels) {
             if (choices.none { c -> c.targets.any { IdMapper.sameDirection(it, label) } }) {
                 choices += DirectionChoice(label, listOf(label), DirectionGroup.OTHER)
             }
@@ -174,6 +186,31 @@ class PrimRepository(
 
     private fun MutableList<String>.addUnique(label: String) {
         if (label.isNotBlank() && none { IdMapper.normalize(it) == IdMapper.normalize(label) }) add(label)
+    }
+
+    /** Parcours de la ligne depuis cet arrêt, calculés avec l'index embarqué (GTFS IDFM). */
+    private fun localRouteInfos(index: StationIndex, stopAreaId: String, lineId: String): List<RouteInfo> {
+        val here = index.station(stopAreaId) ?: return emptyList()
+        val hereDistance = km(here.lat, here.lon)
+        return index.patternsThrough(stopAreaId, lineId).mapNotNull { p ->
+            val i = p.zdcs.indexOf(here.zdc)
+            if (i < 0 || i == p.zdcs.lastIndex) return@mapNotNull null
+            val after = p.zdcs.drop(i + 1).mapNotNull { index.stationByZdc(it) }
+            if (after.isEmpty()) return@mapNotNull null
+            val missions = p.missions.toSet()
+            RouteInfo(
+                terminus = after.last().shortName,
+                towardsParis = after.minOf { km(it.lat, it.lon) } < hereDistance - 1.0,
+                stationsAfter = after.associate { it.shortName to missions },
+                missions = missions,
+            )
+        }
+    }
+
+    private fun km(lat: Double, lon: Double): Double {
+        val dy = (lat - PARIS_LAT) * 111.2
+        val dx = (lon - PARIS_LON) * 111.2 * cos(Math.toRadians(PARIS_LAT))
+        return sqrt(dx * dx + dy * dy)
     }
 
     /**

@@ -21,7 +21,22 @@ import kotlin.math.sqrt
 class StationIndex private constructor(
     val lines: List<Line>,
     val stations: List<Station>,
+    patterns: List<Pattern>,
 ) {
+    /** Parcours distinct d'une ligne : gares (ZdC) dans l'ordre + codes mission RER qui l'empruntent. */
+    class Pattern(val line: Line, val missions: List<String>, val trips: Int, val zdcs: IntArray)
+
+    private val patternsByLine = patterns.groupBy { it.line.code }
+
+    /** Parcours de la ligne passant par la station (vide si le GTFS n'est pas embarqué). */
+    fun patternsThrough(navitiaStopAreaId: String, lineId: String): List<Pattern> {
+        val zdc = navitiaStopAreaId.trimEnd(':').substringAfterLast(':').toIntOrNull() ?: return emptyList()
+        return patternsByLine[IdMapper.lineCode(lineId)].orEmpty().filter { p -> p.zdcs.any { it == zdc } }
+    }
+
+    fun stationByZdc(zdc: Int): Station? = byZdc[zdc]
+
+    val hasPatterns = patterns.isNotEmpty()
     class Line(val code: String, val shortName: String, val name: String, val category: ModeCategory,
                val modeLabel: String, val color: String, val textColor: String) {
         fun toItem(via: Station? = null, viaMeters: Int? = null) = LineItem(
@@ -39,6 +54,8 @@ class StationIndex private constructor(
         val modes: Set<ModeCategory> = lines.map { it.line.category }.filter { it != ModeCategory.OTHER }.toSortedSet()
         val rail = lines.any { it.line.category != ModeCategory.BUS }
         fun toStop(distance: Int? = null) = StopItem(navitiaId, name, distance, modes, lat, lon)
+        /** Nom sans la commune : « Gare du Nord (Paris) » -> « Gare du Nord ». */
+        val shortName: String get() = name.replace(Regex("""\s*\([^)]*\)\s*$"""), "")
     }
 
     private val byZdc = stations.associateBy { it.zdc }
@@ -91,7 +108,11 @@ class StationIndex private constructor(
     fun fallbackRefs(navitiaStopAreaId: String, lineId: String): List<String> {
         val code = IdMapper.lineCode(lineId)
         val sl = station(navitiaStopAreaId)?.lines?.firstOrNull { it.line.code == code } ?: return emptyList()
-        return sl.arrIds.map { "STIF:StopPoint:Q:$it:" } + sl.zdaIds.map { "STIF:StopArea:SP:$it:" }
+        // Métro/tram : quais (ArR). Trains/RER : le temps réel SNCF utilise l'identifiant de zone d'arrêt
+        // comme « quai » (ex. Q:43132 à Grigny Centre). On propose les deux formes.
+        return (sl.arrIds.map { "STIF:StopPoint:Q:$it:" } +
+            sl.zdaIds.map { "STIF:StopPoint:Q:$it:" } +
+            sl.zdaIds.map { "STIF:StopArea:SP:$it:" }).distinct()
     }
 
     companion object {
@@ -136,7 +157,17 @@ class StationIndex private constructor(
                     },
                 )
             }
-            return StationIndex(lines, stations)
+            val patterns = root["patterns"]?.jsonArray.orEmpty().mapNotNull { e ->
+                val a = e.jsonArray
+                val line = lines.getOrNull(a[0].jsonPrimitive.int) ?: return@mapNotNull null
+                Pattern(
+                    line = line,
+                    missions = a[1].jsonArray.map { it.jsonPrimitive.content },
+                    trips = a[2].jsonPrimitive.int,
+                    zdcs = a[3].jsonArray.map { it.jsonPrimitive.int }.toIntArray(),
+                )
+            }
+            return StationIndex(lines, stations, patterns)
         }
 
         fun distance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Int {
