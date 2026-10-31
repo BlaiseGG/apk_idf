@@ -35,7 +35,21 @@ data class Trajet(
     val lineTextColor: String,
     val direction: String? = null,
     val monitoringRefs: List<String> = emptyList(),
+    /** Terminus acceptés (ex. « Paris » regroupe Creil, Orry-la-Ville…). Vide = on compare à [direction]. */
+    val directionTargets: List<String> = emptyList(),
 )
+
+/** Choix proposé à l'étape « Direction ». */
+data class DirectionChoice(
+    val label: String,            // affiché : « Paris », « Corbeil-Essonnes »…
+    val targets: List<String>,    // terminus regroupés derrière ce choix
+    val group: DirectionGroup,
+)
+
+enum class DirectionGroup { PARIS, OTHER, PARIS_DETAIL }
+
+/** Résultat de l'étape « Direction » pour une ligne à un arrêt. */
+data class LineAtStop(val monitoringRefs: List<String>, val choices: List<DirectionChoice>)
 
 /** Un passage temps réel. */
 data class Passage(

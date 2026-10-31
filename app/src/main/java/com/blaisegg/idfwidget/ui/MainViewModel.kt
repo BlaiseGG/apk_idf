@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.blaisegg.idfwidget.app
+import com.blaisegg.idfwidget.data.DirectionChoice
+import com.blaisegg.idfwidget.data.LineAtStop
 import com.blaisegg.idfwidget.data.LineItem
 import com.blaisegg.idfwidget.data.Passage
 import com.blaisegg.idfwidget.data.PrimException
@@ -28,8 +30,6 @@ sealed interface Load<out T> {
     data class Err(val message: String) : Load<Nothing>
 }
 
-data class DirectionsData(val refs: List<String>, val labels: List<String>)
-
 data class UiState(
     val step: Step = Step.LOADING,
     val apiKey: String = "",
@@ -39,7 +39,7 @@ data class UiState(
     val stop: StopItem? = null,
     val lines: Load<List<LineItem>> = Load.Idle,
     val line: LineItem? = null,
-    val directions: Load<DirectionsData> = Load.Idle,
+    val directions: Load<LineAtStop> = Load.Idle,
     val trajet: Trajet? = null,        // trajet affiché dans le récapitulatif
     val saved: Boolean = false,        // déjà associé au(x) widget(s) ?
     val preview: Load<List<Passage>> = Load.Idle,
@@ -172,20 +172,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(line = line, step = Step.DIRECTIONS, directions = Load.Loading) }
         viewModelScope.launch {
             val key = _state.value.apiKey
-            val result = load {
-                val refs = runCatching { repo.monitoringRefs(key, stop.id, line.id) }.getOrDefault(emptyList())
-                DirectionsData(refs, repo.directions(key, stop.id, line, refs))
-            }
+            val result = load { repo.lineAtStop(key, stop.id, line) }
             _state.update { it.copy(directions = result) }
         }
     }
 
-    /** [direction] null = toutes directions. Affiche le récapitulatif à valider. */
-    fun selectDirection(direction: String?) {
+    /** [choice] null = toutes directions. Affiche le récapitulatif à valider. */
+    fun selectDirection(choice: DirectionChoice?) {
         val s = _state.value
         val stop = s.stop ?: return
         val line = s.line ?: return
-        val refs = (s.directions as? Load.Ok<DirectionsData>)?.data?.refs.orEmpty()
+        val refs = (s.directions as? Load.Ok<LineAtStop>)?.data?.monitoringRefs.orEmpty()
         val trajet = Trajet(
             stopAreaId = stop.id,
             stopName = stop.name,
@@ -195,8 +192,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             mode = line.mode,
             lineColor = line.color,
             lineTextColor = line.textColor,
-            direction = direction,
+            direction = choice?.label,
             monitoringRefs = refs,
+            directionTargets = choice?.targets.orEmpty(),
         )
         _state.update { it.copy(trajet = trajet, saved = false, step = Step.SUMMARY) }
         loadPreview()

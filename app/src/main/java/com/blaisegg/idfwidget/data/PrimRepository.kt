@@ -1,5 +1,6 @@
 package com.blaisegg.idfwidget.data
 
+import com.blaisegg.idfwidget.data.api.CoordDto
 import com.blaisegg.idfwidget.data.api.LineDto
 import com.blaisegg.idfwidget.data.api.MonitoredStopVisitDto
 import com.blaisegg.idfwidget.data.api.PlaceDto
@@ -13,6 +14,8 @@ import kotlinx.serialization.SerializationException
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.Instant
+import kotlin.math.cos
+import kotlin.math.sqrt
 
 class PrimRepository(private val api: PrimApi = Network.primApi) {
 
@@ -32,54 +35,108 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             .sortedWith(compareBy({ modeOrder(it.mode) }, { it.code.padStart(4, '0') }))
     }
 
-    /** Quais (SIRI StopPoint) de la ligne dans cette zone d'arrêt. */
-    suspend fun monitoringRefs(apiKey: String, stopAreaId: String, lineId: String): List<String> = call {
-        api.stopPoints(requireKey(apiKey), stopAreaId, lineId).stopPoints
-            .map { IdMapper.stopPointRef(it.id) }
-            .distinct()
+    /**
+     * Quais de la ligne à cet arrêt + directions proposées :
+     *  1. « Paris » en premier, qui regroupe tous les terminus atteints en se rapprochant de Paris,
+     *  2. puis chaque terminus de l'autre sens,
+     *  3. puis le détail des terminus côté Paris.
+     */
+    suspend fun lineAtStop(apiKey: String, stopAreaId: String, line: LineItem): LineAtStop = coroutineScope {
+        val key = requireKey(apiKey)
+        val stopPoints = runCatching { api.stopPoints(key, stopAreaId, line.id).stopPoints }.getOrDefault(emptyList())
+        val refs = stopPoints.map { IdMapper.stopPointRef(it.id) }.distinct()
+        val stationIds = stopPoints.map { it.id }.toSet()
+        val stationDistance = stopPoints.mapNotNull { it.coord.km() }.minOrNull()
+
+        val liveLabels = async {
+            runCatching {
+                fetchVisits(key, stopAreaId, refs)
+                    .filter { matchesLine(it, line.id) }
+                    .mapNotNull { v ->
+                        val j = v.journey ?: return@mapNotNull null
+                        j.destinationName.firstValue() ?: j.directionName.firstValue()
+                    }
+            }.getOrDefault(emptyList())
+        }
+
+        val routes = runCatching { api.routes(key, stopAreaId, line.id).routes }.getOrDefault(emptyList())
+        // Sens de chaque parcours, calculé en parallèle (limité pour préserver le quota).
+        val towardsParis = routes.take(MAX_ROUTES).map { route ->
+            async { route to isTowardsParis(key, route.id, stationIds, stationDistance) }
+        }.awaitAll()
+
+        val parisTermini = mutableListOf<String>()
+        val otherTermini = mutableListOf<String>()
+        fun MutableList<String>.addUnique(label: String) {
+            if (label.isNotBlank() && none { IdMapper.normalize(it) == IdMapper.normalize(label) }) add(label)
+        }
+        for ((route, paris) in towardsParis) {
+            val terminus = route.direction?.stopArea?.name?.takeIf { it.isNotBlank() }
+                ?: route.direction?.name?.takeIf { it.isNotBlank() }
+                ?: route.name
+            val inParis = stationDistance != null && stationDistance < PARIS_RADIUS_KM
+            val isParis = !inParis && (paris ?: IdMapper.normalize(terminus).startsWith("paris"))
+            if (isParis) parisTermini.addUnique(terminus) else otherTermini.addUnique(terminus)
+        }
+        // Terminus annoncés en temps réel absents du référentiel : rattachés si possible, sinon « autres ».
+        for (label in liveLabels.await()) {
+            val known = (parisTermini + otherTermini).any { IdMapper.sameDirection(it, label) }
+            if (!known) otherTermini.addUnique(label)
+        }
+        otherTermini.removeAll { o -> parisTermini.any { IdMapper.normalize(it) == IdMapper.normalize(o) } }
+
+        val choices = buildList {
+            if (parisTermini.isNotEmpty()) add(DirectionChoice("Paris", parisTermini.toList(), DirectionGroup.PARIS))
+            otherTermini.sortedBy { IdMapper.normalize(it) }
+                .forEach { add(DirectionChoice(it, listOf(it), DirectionGroup.OTHER)) }
+            if (parisTermini.size > 1) {
+                parisTermini.sortedBy { IdMapper.normalize(it) }
+                    .forEach { add(DirectionChoice(it, listOf(it), DirectionGroup.PARIS_DETAIL)) }
+            }
+        }
+        LineAtStop(refs, choices)
     }
 
     /**
-     * Directions possibles : celles annoncées en temps réel (libellés identiques à ceux
-     * qu'on filtrera ensuite) complétées par les terminus théoriques Navitia.
+     * true si, après cet arrêt, le train se rapproche nettement de Paris (traverse Paris ou s'en approche).
+     * null si on ne peut pas le déterminer (pas de données, ou arrêt déjà dans Paris).
      */
-    suspend fun directions(apiKey: String, stopAreaId: String, line: LineItem, refs: List<String>): List<String> =
-        coroutineScope {
-            val key = requireKey(apiKey)
-            val theoretical = async {
-                runCatching {
-                    api.routes(key, stopAreaId, line.id).routes.mapNotNull { r ->
-                        r.direction?.stopArea?.name?.takeIf { it.isNotBlank() }
-                            ?: r.direction?.name?.takeIf { it.isNotBlank() }
-                            ?: r.name.takeIf { it.isNotBlank() }
-                    }
-                }.getOrDefault(emptyList())
-            }
-            val live = async {
-                runCatching {
-                    fetchVisits(key, stopAreaId, refs)
-                        .filter { matchesLine(it, line.id) }
-                        .mapNotNull { v ->
-                            val j = v.journey ?: return@mapNotNull null
-                            j.directionName.firstValue() ?: j.destinationName.firstValue()
-                        }
-                }.getOrDefault(emptyList())
-            }
-            val all = live.await() + theoretical.await()
-            val result = mutableListOf<String>()
-            for (label in all) {
-                if (result.none { IdMapper.normalize(it) == IdMapper.normalize(label) }) result += label
-            }
-            result
+    private suspend fun isTowardsParis(
+        key: String,
+        routeId: String,
+        stationIds: Set<String>,
+        stationDistance: Double?,
+    ): Boolean? {
+        if (stationDistance == null || stationDistance < PARIS_RADIUS_KM) return null
+        val journeys = runCatching { api.routeVehicleJourneys(key, routeId).vehicleJourneys }.getOrNull() ?: return null
+        for (vj in journeys) {
+            val idx = vj.stopTimes.indexOfFirst { st -> st.stopPoint?.id?.let { it in stationIds } == true }
+            if (idx < 0) continue
+            val after = vj.stopTimes.drop(idx + 1).mapNotNull { it.stopPoint?.coord.km() }
+            if (after.isEmpty()) return false // cet arrêt est le terminus
+            return after.min() < stationDistance - 1.0
         }
+        return null
+    }
+
+    /** Distance (km) au centre de Paris. */
+    private fun CoordDto?.km(): Double? {
+        val lat = this?.lat?.toDoubleOrNull() ?: return null
+        val lon = this?.lon?.toDoubleOrNull() ?: return null
+        if (lat == 0.0 && lon == 0.0) return null
+        val dy = (lat - PARIS_LAT) * 111.2
+        val dx = (lon - PARIS_LON) * 111.2 * cos(Math.toRadians(PARIS_LAT))
+        return sqrt(dx * dx + dy * dy)
+    }
 
     /** Prochains passages du trajet, triés, uniquement dans le futur. */
     suspend fun nextPassages(apiKey: String, trajet: Trajet): List<Passage> = call {
         val now = System.currentTimeMillis()
+        val targets = trajet.directionTargets.ifEmpty { listOfNotNull(trajet.direction) }
         fetchVisits(requireKey(apiKey), trajet.stopAreaId, trajet.monitoringRefs)
             .asSequence()
             .filter { matchesLine(it, trajet.lineId) }
-            .mapNotNull { it.toPassage(trajet.direction) }
+            .mapNotNull { it.toPassage(targets) }
             .filter { it.epochMillis >= now - 30_000 }
             .distinctBy { it.epochMillis / 1000 to it.destination }
             .sortedBy { it.epochMillis }
@@ -109,14 +166,15 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
     private fun matchesLine(v: MonitoredStopVisitDto, lineId: String): Boolean =
         IdMapper.lineCode(v.journey?.lineRef?.value) == IdMapper.lineCode(lineId)
 
-    private fun MonitoredStopVisitDto.toPassage(direction: String?): Passage? {
+    /** [targets] vide = toutes directions. */
+    private fun MonitoredStopVisitDto.toPassage(targets: List<String>): Passage? {
         val j = journey ?: return null
         val c = j.call ?: return null
         if (c.departureStatus.equals("cancelled", true)) return null
         val destination = c.destinationDisplay.firstValue() ?: j.destinationName.firstValue() ?: ""
-        if (direction != null) {
-            val candidates = listOf(j.directionName.firstValue(), j.destinationName.firstValue(), destination)
-            if (candidates.none { IdMapper.sameDirection(it, direction) }) return null
+        if (targets.isNotEmpty()) {
+            val candidates = listOf(j.destinationName.firstValue(), destination, j.directionName.firstValue())
+            if (candidates.none { c -> targets.any { IdMapper.sameDirection(c, it) } }) return null
         }
         val time = listOf(c.expectedDeparture, c.expectedArrival, c.aimedDeparture, c.aimedArrival)
             .firstNotNullOfOrNull { s -> s?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } }
@@ -153,6 +211,13 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             m.contains("bus") -> 5
             else -> 4
         }
+    }
+
+    private companion object {
+        const val MAX_ROUTES = 16
+        const val PARIS_LAT = 48.8566
+        const val PARIS_LON = 2.3488
+        const val PARIS_RADIUS_KM = 5.0
     }
 
     private fun requireKey(key: String): String =

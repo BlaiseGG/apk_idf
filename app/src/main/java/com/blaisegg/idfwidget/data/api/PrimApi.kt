@@ -56,6 +56,15 @@ interface PrimApi {
         @Query("count") count: Int = 50,
     ): StopPointsResponse
 
+    /** Quelques circulations d'un parcours, avec leurs arrêts dans l'ordre (pour savoir s'il va vers Paris). */
+    @GET("v2/navitia/routes/{route}/vehicle_journeys")
+    suspend fun routeVehicleJourneys(
+        @Header("apikey") apiKey: String,
+        @Path("route") routeId: String,
+        @Query("count") count: Int = 5,
+        @Query("depth") depth: Int = 2,
+    ): VehicleJourneysResponse
+
     // ---- Temps réel (SIRI-Lite, requête unitaire) ----
 
     @GET("stop-monitoring")

@@ -65,4 +65,20 @@ data class RouteDirectionDto(
 data class StopPointsResponse(@SerialName("stop_points") val stopPoints: List<StopPointDto> = emptyList())
 
 @Serializable
-data class StopPointDto(val id: String = "", val name: String = "")
+data class StopPointDto(val id: String = "", val name: String = "", val coord: CoordDto? = null)
+
+@Serializable
+data class CoordDto(val lat: String? = null, val lon: String? = null)
+
+@Serializable
+data class VehicleJourneysResponse(
+    @SerialName("vehicle_journeys") val vehicleJourneys: List<NavVehicleJourneyDto> = emptyList(),
+)
+
+@Serializable
+data class NavVehicleJourneyDto(
+    @SerialName("stop_times") val stopTimes: List<StopTimeDto> = emptyList(),
+)
+
+@Serializable
+data class StopTimeDto(@SerialName("stop_point") val stopPoint: StopPointDto? = null)

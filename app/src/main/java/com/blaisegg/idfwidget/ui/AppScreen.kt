@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -73,6 +74,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.blaisegg.idfwidget.data.DirectionChoice
+import com.blaisegg.idfwidget.data.DirectionGroup
 import com.blaisegg.idfwidget.data.LineItem
 import com.blaisegg.idfwidget.data.Passage
 import com.blaisegg.idfwidget.data.StopItem
@@ -128,7 +131,7 @@ fun AppScreen(vm: MainViewModel, widgetMode: Boolean, onExit: () -> Unit) {
                 Step.API_KEY -> ApiKeyStep(state.apiKey, onSave = vm::saveApiKey)
                 Step.SEARCH -> SearchStep(state, vm)
                 Step.LINES -> ListStep(state.lines) { lines -> LinesList(lines, vm::selectLine) }
-                Step.DIRECTIONS -> ListStep(state.directions) { d -> DirectionsList(d.labels, vm::selectDirection) }
+                Step.DIRECTIONS -> ListStep(state.directions) { d -> DirectionsList(d.choices, vm::selectDirection) }
                 Step.SUMMARY -> SummaryStep(state, widgetMode, vm)
             }
         }
@@ -266,17 +269,45 @@ private fun hexColor(hex: String, fallback: Color): Color =
 // ------------------------------------------------------------------ Directions
 
 @Composable
-private fun DirectionsList(labels: List<String>, onClick: (String?) -> Unit) {
+private fun DirectionsList(choices: List<DirectionChoice>, onClick: (DirectionChoice?) -> Unit) {
+    val paris = choices.filter { it.group == DirectionGroup.PARIS }
+    val others = choices.filter { it.group == DirectionGroup.OTHER }
+    val parisDetail = choices.filter { it.group == DirectionGroup.PARIS_DETAIL }
+
     LazyColumn {
-        item {
+        // 1. « Direction Paris » en premier, bien visible.
+        items(paris) { choice ->
             ListItem(
-                headlineContent = { Text("Toutes directions", fontWeight = FontWeight.Bold) },
-                supportingContent = { Text("Afficher tous les passages de la ligne") },
-                modifier = Modifier.clickable { onClick(null) },
+                headlineContent = { Text("Direction Paris", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                supportingContent = { Text("Tous les trains vers Paris (" + choice.targets.joinToString(", ") + ")") },
+                leadingContent = { Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                modifier = Modifier.clickable { onClick(choice) },
             )
             HorizontalDivider()
         }
-        if (labels.isEmpty()) {
+        // 2. Les gares de l'autre sens.
+        if (others.isNotEmpty()) {
+            item { SectionHeader(if (paris.isNotEmpty()) "Autre sens (en s'éloignant de Paris)" else "Directions") }
+            items(others) { choice ->
+                ListItem(
+                    headlineContent = { Text("Direction ${choice.label}") },
+                    modifier = Modifier.clickable { onClick(choice) },
+                )
+                HorizontalDivider()
+            }
+        }
+        // 3. Une gare précise côté Paris.
+        if (parisDetail.isNotEmpty()) {
+            item { SectionHeader("Une gare précise vers Paris") }
+            items(parisDetail) { choice ->
+                ListItem(
+                    headlineContent = { Text("Direction ${choice.label}") },
+                    modifier = Modifier.clickable { onClick(choice) },
+                )
+                HorizontalDivider()
+            }
+        }
+        if (choices.isEmpty()) {
             item {
                 Text(
                     "Aucune direction trouvée pour l'instant (service terminé ?). Choisissez « Toutes directions ».",
@@ -285,14 +316,24 @@ private fun DirectionsList(labels: List<String>, onClick: (String?) -> Unit) {
                 )
             }
         }
-        items(labels) { label ->
+        item {
             ListItem(
-                headlineContent = { Text("Direction $label") },
-                modifier = Modifier.clickable { onClick(label) },
+                headlineContent = { Text("Toutes directions") },
+                supportingContent = { Text("Afficher tous les passages de la ligne") },
+                modifier = Modifier.clickable { onClick(null) },
             )
-            HorizontalDivider()
         }
     }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 6.dp),
+    )
 }
 
 // ------------------------------------------------------------------ Récapitulatif
