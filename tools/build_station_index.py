@@ -12,15 +12,19 @@ Format de sortie (compact) :
   {"v":1, "lines":[[id, code, nom, catégorie, libellé_mode, couleur, couleur_texte]],
    "stations":[[zdc, nom, lat, lon, [[idx_ligne, [arr...], [zda...]], ...]]]}
 """
-import csv, io, json, re, sys, urllib.request
+import csv, gzip, io, json, re, sys, urllib.request
 from collections import defaultdict
 
 BASE = "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/{}/exports/csv?delimiter=%3B"
 
 
 def load(name):
-    with urllib.request.urlopen(BASE.format(name), timeout=300) as r:
-        text = r.read().decode("utf-8-sig")
+    req = urllib.request.Request(BASE.format(name), headers={"Accept-Encoding": "identity"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        raw = r.read()
+    if raw[:2] == b"\x1f\x8b":  # réponse compressée (gzip)
+        raw = gzip.decompress(raw)
+    text = raw.decode("utf-8-sig")
     return list(csv.DictReader(io.StringIO(text), delimiter=";"))
 
 
