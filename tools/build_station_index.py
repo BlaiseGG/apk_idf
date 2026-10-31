@@ -138,6 +138,29 @@ def main(out):
                 pass
 
     cat_order = {"RER": 0, "METRO": 1, "TRAIN": 2, "TRAM": 3, "OTHER": 4, "BUS": 5}
+
+    # Doublons (même RER/métro/tram sous deux identifiants) : on garde la ligne qui dessert
+    # le plus de gares (la ligne principale), en fusionnant ses quais.
+    served = defaultdict(int)
+    for by_line in st.values():
+        for i in by_line:
+            served[i] += 1
+    for zdc, by_line in st.items():
+        groups = defaultdict(list)
+        for i in list(by_line):
+            code, short, name, cat = lines[i][:4]
+            if cat in ("RER", "METRO", "TRAM"):
+                groups[(cat, short.upper())].append(i)
+        for ids in groups.values():
+            if len(ids) < 2:
+                continue
+            keep = max(ids, key=lambda i: served[i])
+            for i in ids:
+                if i != keep:
+                    a2, z2 = by_line.pop(i)
+                    by_line[keep][0].update(a2)
+                    by_line[keep][1].update(z2)
+                    print("   doublon fusionné :", lines[i][0], "->", lines[keep][0], lines[keep][2])
     stations = []
     for zdc, by_line in st.items():
         name, t = zdc_info.get(zdc, ("", ""))
@@ -156,7 +179,7 @@ def main(out):
     for probe in (71264, 71410, 60797, 474151, 73794):
         s = next((x for x in stations if x[0] == probe), None)
         if s:
-            print("  ", s[1], "->", ", ".join(f"{lines[i][2]}[{lines[i][3]}]" for i, _, _ in s[4] if lines[i][3] != "BUS"))
+            print("  ", s[1], "->", ", ".join(f"{lines[i][2]}[{lines[i][0]}]" for i, _, _ in s[4] if lines[i][3] != "BUS"))
 
 
 if __name__ == "__main__":
