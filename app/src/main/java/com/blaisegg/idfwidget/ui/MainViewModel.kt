@@ -209,6 +209,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             direction = choice?.label,
             monitoringRefs = refs,
             directionTargets = choice?.targets.orEmpty(),
+            excludedMissions = choice?.excludedMissions.orEmpty(),
         )
         _state.update { it.copy(trajet = trajet, saved = false, step = Step.SUMMARY) }
         loadPreview()

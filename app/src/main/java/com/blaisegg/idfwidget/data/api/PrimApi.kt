@@ -63,7 +63,7 @@ interface PrimApi {
     suspend fun routeVehicleJourneys(
         @Header("apikey") apiKey: String,
         @Path("route") routeId: String,
-        @Query("count") count: Int = 5,
+        @Query("count") count: Int = 12,
         @Query("depth") depth: Int = 2,
     ): VehicleJourneysResponse
 

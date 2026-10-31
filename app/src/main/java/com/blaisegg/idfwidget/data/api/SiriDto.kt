@@ -38,6 +38,8 @@ data class VehicleJourneyDto(
     @SerialName("DirectionName") val directionName: List<ValueDto> = emptyList(),
     @Serializable(with = ValueListSerializer::class)
     @SerialName("DestinationName") val destinationName: List<ValueDto> = emptyList(),
+    @Serializable(with = ValueListSerializer::class)
+    @SerialName("JourneyNote") val journeyNote: List<ValueDto> = emptyList(), // code mission RER
     @SerialName("MonitoredCall") val call: MonitoredCallDto? = null,
 )
 

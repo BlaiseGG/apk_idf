@@ -79,6 +79,7 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blaisegg.idfwidget.data.DirectionChoice
 import com.blaisegg.idfwidget.data.DirectionGroup
+import com.blaisegg.idfwidget.data.IdMapper
 import com.blaisegg.idfwidget.data.LineItem
 import com.blaisegg.idfwidget.data.ModeCategory
 import com.blaisegg.idfwidget.data.Passage
@@ -329,42 +330,52 @@ private fun hexColor(hex: String, fallback: Color): Color =
 
 @Composable
 private fun DirectionsList(choices: List<DirectionChoice>, onClick: (DirectionChoice?) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
     val paris = choices.filter { it.group == DirectionGroup.PARIS }
-    val others = choices.filter { it.group == DirectionGroup.OTHER }
-    val parisDetail = choices.filter { it.group == DirectionGroup.PARIS_DETAIL }
+    val stations = choices.filter { it.group != DirectionGroup.PARIS }
+    val q = IdMapper.normalize(query)
+    val shown = if (q.isEmpty()) stations else stations.filter { IdMapper.normalize(it.label).contains(q) }
 
     LazyColumn {
         // 1. « Direction Paris » en premier, bien visible.
-        items(paris) { choice ->
+        if (q.isEmpty()) {
+            items(paris) { choice ->
+                ListItem(
+                    headlineContent = { Text("Direction Paris", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                    supportingContent = { Text("Tous les trains vers Paris (" + choice.targets.joinToString(", ") + ")") },
+                    leadingContent = { Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.clickable { onClick(choice) },
+                )
+                HorizontalDivider()
+            }
+        }
+        // 2. Recherche de la gare où l'on va.
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Où allez-vous ? (ex. Grigny)") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        if (stations.isNotEmpty()) {
+            item { SectionHeader(if (q.isEmpty()) "Toutes les gares desservies" else "${shown.size} gare(s) trouvée(s)") }
+        }
+        items(shown, key = { "st-" + it.label }) { choice ->
             ListItem(
-                headlineContent = { Text("Direction Paris", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
-                supportingContent = { Text("Tous les trains vers Paris (" + choice.targets.joinToString(", ") + ")") },
-                leadingContent = { Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                headlineContent = { Text(choice.label) },
+                supportingContent = {
+                    val termini = choice.targets.filterNot { IdMapper.normalize(it) == IdMapper.normalize(choice.label) }
+                    if (termini.isNotEmpty()) Text("Trains vers " + termini.joinToString(", "))
+                },
                 modifier = Modifier.clickable { onClick(choice) },
             )
             HorizontalDivider()
         }
-        // 2. Les gares de l'autre sens.
-        if (others.isNotEmpty()) {
-            item { SectionHeader(if (paris.isNotEmpty()) "Autre sens (en s'éloignant de Paris)" else "Directions") }
-            items(others) { choice ->
-                ListItem(
-                    headlineContent = { Text("Direction ${choice.label}") },
-                    modifier = Modifier.clickable { onClick(choice) },
-                )
-                HorizontalDivider()
-            }
-        }
-        // 3. Une gare précise côté Paris.
-        if (parisDetail.isNotEmpty()) {
-            item { SectionHeader("Une gare précise vers Paris") }
-            items(parisDetail) { choice ->
-                ListItem(
-                    headlineContent = { Text("Direction ${choice.label}") },
-                    modifier = Modifier.clickable { onClick(choice) },
-                )
-                HorizontalDivider()
-            }
+        if (q.isNotEmpty() && shown.isEmpty()) {
+            item { Text("Aucune gare de cette ligne ne correspond.", modifier = Modifier.padding(16.dp)) }
         }
         if (choices.isEmpty()) {
             item {

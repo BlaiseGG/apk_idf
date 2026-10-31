@@ -67,7 +67,12 @@ data class RouteDirectionDto(
 data class StopPointsResponse(@SerialName("stop_points") val stopPoints: List<StopPointDto> = emptyList())
 
 @Serializable
-data class StopPointDto(val id: String = "", val name: String = "", val coord: CoordDto? = null)
+data class StopPointDto(
+    val id: String = "",
+    val name: String = "",
+    val coord: CoordDto? = null,
+    @SerialName("stop_area") val stopArea: StopAreaDto? = null,
+)
 
 @Serializable
 data class CoordDto(val lat: String? = null, val lon: String? = null)
@@ -79,6 +84,7 @@ data class VehicleJourneysResponse(
 
 @Serializable
 data class NavVehicleJourneyDto(
+    val headsign: String? = null, // code mission RER (ex. ZOKA) chez IDFM
     @SerialName("stop_times") val stopTimes: List<StopTimeDto> = emptyList(),
 )
 
