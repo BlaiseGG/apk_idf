@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Prochains Passages IDFM</string>
-    <string name="widget_name">Prochains passages</string>
+    <string name="app_name">Quai</string>
+    <string name="widget_name">Quai · Prochains passages</string>
     <string name="widget_description">Les 2 prochains passages en temps réel de votre ligne</string>
 </resources>

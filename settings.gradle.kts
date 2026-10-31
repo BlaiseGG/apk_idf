@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ProchainsPassagesIDFM"
+rootProject.name = "Quai"
 include(":app")

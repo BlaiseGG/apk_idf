@@ -204,7 +204,7 @@ private fun NotConfigured(context: Context, appWidgetId: Int) {
         horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
     ) {
         Text(
-            text = "Prochains passages",
+            text = "Quai",
             style = TextStyle(color = ColorProvider(Yellow), fontSize = 16.sp, fontWeight = FontWeight.Bold),
         )
         Text(

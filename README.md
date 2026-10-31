@@ -1,4 +1,4 @@
-# Prochains Passages IDFM — application Android + widget
+# Quai — prochains passages IDFM (application Android + widget)
 
 Widget d'écran d'accueil façon « panneau de quai » qui affiche les **2 prochains passages en temps réel**
 (RER, Métro, Train, Tram, Bus) d'une ligne et d'une direction choisies, via les API publiques
@@ -90,7 +90,7 @@ Permissions (`AndroidManifest.xml`) : `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCES
 ### Option A — sans rien installer (GitHub Actions)
 Chaque push compile automatiquement l'APK.
 1. Onglet **Actions** du dépôt → dernier run « Build APK » (vert).
-2. Section **Artifacts** → télécharger `prochains-passages-apk` (zip contenant `app-debug.apk` et `app-release.apk`).
+2. Section **Artifacts** → télécharger `quai-apk` (zip contenant `app-debug.apk` et `app-release.apk`).
 3. Sur le téléphone : ouvrir l'APK, autoriser « Installer des applis inconnues » pour le navigateur / gestionnaire de fichiers.
 
 ### Option B — Android Studio
@@ -118,4 +118,4 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    Prochains passages). Toucher le widget pour rafraîchir, ⚙ pour lui donner un trajet différent.
 
 Astuce : si les mises à jour automatiques s'arrêtent, exclure l'app de l'optimisation de batterie
-(Paramètres › Applications › Prochains Passages IDFM › Batterie › Sans restriction), certains constructeurs étant très agressifs.
+(Paramètres › Applications › Quai › Batterie › Sans restriction), certains constructeurs étant très agressifs.
