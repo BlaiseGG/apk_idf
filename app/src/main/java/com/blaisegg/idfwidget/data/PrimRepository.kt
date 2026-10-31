@@ -30,10 +30,42 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             .sortedBy { it.distanceMeters ?: Int.MAX_VALUE }
     }
 
-    suspend fun linesAt(apiKey: String, stopAreaId: String): List<LineItem> = call {
-        api.linesOfStopArea(requireKey(apiKey), stopAreaId).lines
-            .map { it.toLine() }
-            .sortedWith(compareBy({ it.category.ordinal }, { it.code.padStart(4, '0') }))
+    /**
+     * Lignes de l'arrêt + lignes ferrées (RER, métro, train, tram) des stations de correspondance
+     * à moins de [CONNECTION_METERS] m (ex. RER E à Magenta depuis Gare du Nord).
+     */
+    suspend fun linesAt(apiKey: String, stop: StopItem): List<LineItem> = call {
+        val key = requireKey(apiKey)
+        coroutineScope {
+            val own = async { api.linesOfStopArea(key, stop.id).lines.map { it.toLine() } }
+            val neighbours = async {
+                if (stop.lat == null || stop.lon == null) return@async emptyList()
+                val nearby = runCatching {
+                    api.placesNearby(key, lon = stop.lon, lat = stop.lat, distance = CONNECTION_METERS, count = 25, depth = 2)
+                        .placesNearby
+                }.getOrDefault(emptyList())
+                    .mapNotNull { it.toStop() }
+                    .filter { it.id != stop.id }
+                    // On ne garde que les stations ferrées (les arrêts de bus voisins sont nombreux).
+                    .filter { n -> n.modes.isEmpty() || n.modes.any { it != ModeCategory.BUS } }
+                    .sortedBy { n -> if (n.modes.isEmpty()) 1 else 0 }
+                    .take(MAX_NEIGHBOURS)
+                nearby.map { n ->
+                    async {
+                        runCatching { api.linesOfStopArea(key, n.id).lines }.getOrDefault(emptyList()).map {
+                            it.toLine().copy(viaStopAreaId = n.id, viaStopName = n.name, viaMeters = n.distanceMeters)
+                        }
+                    }
+                }.awaitAll().flatten()
+            }
+            val ownLines = own.await()
+            val known = ownLines.map { it.id }.toMutableSet()
+            val extra = neighbours.await()
+                .filter { it.category != ModeCategory.BUS && it.category != ModeCategory.OTHER }
+                .sortedBy { it.viaMeters ?: Int.MAX_VALUE }
+                .filter { known.add(it.id) }
+            (ownLines + extra).sortedWith(compareBy({ it.category.ordinal }, { it.code.padStart(4, '0') }))
+        }
     }
 
     /**
@@ -292,6 +324,8 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             id = sa.id.ifBlank { id },
             name = name.ifBlank { sa.label ?: sa.name },
             distanceMeters = distance?.toDoubleOrNull()?.toInt(),
+            lat = sa.coord?.lat?.toDoubleOrNull(),
+            lon = sa.coord?.lon?.toDoubleOrNull(),
             modes = (sa.commercialModes + sa.physicalModes)
                 .map { ModeCategory.of(it.name.ifBlank { it.id }) }
                 .filter { it != ModeCategory.OTHER }
@@ -311,6 +345,8 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
     private companion object {
         const val MAX_ROUTES = 16
         const val MAX_MISSIONS = 20
+        const val CONNECTION_METERS = 350
+        const val MAX_NEIGHBOURS = 6
         const val PARIS_LAT = 48.8566
         const val PARIS_LON = 2.3488
         const val PARIS_RADIUS_KM = 5.0

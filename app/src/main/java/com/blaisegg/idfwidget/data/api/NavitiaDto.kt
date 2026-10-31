@@ -25,6 +25,7 @@ data class StopAreaDto(
     val id: String = "",
     val name: String = "",
     val label: String? = null,
+    val coord: CoordDto? = null,
     @SerialName("commercial_modes") val commercialModes: List<NamedDto> = emptyList(),
     @SerialName("physical_modes") val physicalModes: List<NamedDto> = emptyList(),
 )

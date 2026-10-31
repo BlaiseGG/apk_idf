@@ -273,7 +273,12 @@ private fun LinesStep(lines: List<LineItem>, hidden: Set<ModeCategory>, vm: Main
                     items(group, key = { it.id }) { line ->
                         ListItem(
                             headlineContent = { Text(line.name) },
-                            supportingContent = { Text(line.mode) },
+                            supportingContent = {
+                                val via = line.viaStopName?.let { n ->
+                                    " · à $n" + (line.viaMeters?.let { " ($it m à pied)" } ?: "")
+                                }.orEmpty()
+                                Text(line.mode + via)
+                            },
                             leadingContent = { LineBadge(line.code, line.color, line.textColor) },
                             modifier = Modifier.clickable { vm.selectLine(line) },
                         )

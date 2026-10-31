@@ -8,6 +8,8 @@ data class StopItem(
     val name: String,
     val distanceMeters: Int? = null,
     val modes: Set<ModeCategory> = emptySet(), // vide = inconnu
+    val lat: Double? = null,
+    val lon: Double? = null,
 )
 
 /** Familles de transport, dans l'ordre d'affichage. */
@@ -38,6 +40,10 @@ data class LineItem(
     val mode: String,        // ex: RER, Métro, Tramway, Train, Bus
     val color: String,       // hex sans '#'
     val textColor: String,
+    /** Ligne d'une station de correspondance voisine (ex. RER E à Magenta depuis Gare du Nord). */
+    val viaStopAreaId: String? = null,
+    val viaStopName: String? = null,
+    val viaMeters: Int? = null,
 ) {
     val category: ModeCategory get() = ModeCategory.of(mode)
 }

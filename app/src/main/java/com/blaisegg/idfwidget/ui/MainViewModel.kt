@@ -178,7 +178,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(stop = stop, step = Step.LINES, lines = Load.Loading) }
         viewModelScope.launch {
             val key = _state.value.apiKey
-            val result = load { repo.linesAt(key, stop.id) }
+            val result = load { repo.linesAt(key, stop) }
                 .let { r -> if (r is Load.Ok && r.data.isEmpty()) Load.Err("Aucune ligne trouvée pour cet arrêt.") else r }
             _state.update { it.copy(lines = result) }
         }
@@ -191,7 +191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(line = line, step = Step.DIRECTIONS, directions = Load.Loading) }
         viewModelScope.launch {
             val key = _state.value.apiKey
-            val result = load { repo.lineAtStop(key, stop.id, line) }
+            val result = load { repo.lineAtStop(key, line.viaStopAreaId ?: stop.id, line) }
             _state.update { it.copy(directions = result) }
         }
     }
@@ -203,8 +203,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val line = s.line ?: return
         val refs = (s.directions as? Load.Ok<LineAtStop>)?.data?.monitoringRefs.orEmpty()
         val trajet = Trajet(
-            stopAreaId = stop.id,
-            stopName = stop.name,
+            stopAreaId = line.viaStopAreaId ?: stop.id,
+            stopName = line.viaStopName ?: stop.name,
             lineId = line.id,
             lineCode = line.code,
             lineName = line.name,
