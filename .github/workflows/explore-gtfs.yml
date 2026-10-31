@@ -1,0 +1,23 @@
+name: Explorer GTFS IDFM
+on:
+  push:
+    paths: [".github/workflows/explore-gtfs.yml"]
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Télécharger et inspecter
+        run: |
+          set -x
+          curl -sL --max-time 600 -o gtfs.zip "https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip" || true
+          ls -la gtfs.zip; file gtfs.zip
+          if ! unzip -l gtfs.zip >/dev/null 2>&1; then
+            curl -s "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/offre-horaires-tc-gtfs-idfm/records?limit=5" | head -c 3000; echo
+          fi
+          unzip -l gtfs.zip
+          mkdir g && cd g && unzip -q ../gtfs.zip
+          for f in agency routes trips stops stop_times calendar; do echo "== $f"; head -4 $f.txt | cut -c1-300; wc -l $f.txt; done
+          echo "== RER D (C01728) trips"; grep -m 5 'IDFM:C01728' trips.txt | cut -c1-300
+          echo "== headsigns RER D"; grep 'IDFM:C01728' trips.txt | awk -F, '{print $4" | "$5}' | sort | uniq -c | sort -rn | head -20
+          echo "== stops Grigny / Châtelet"; grep -E 'Grigny Centre|^IDFM:463079|IDFM:22146' stops.txt | head -8 | cut -c1-300
+          du -sh .
