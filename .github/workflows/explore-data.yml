@@ -1,0 +1,20 @@
+name: Explorer données ouvertes IDFM
+on:
+  push:
+    paths: [".github/workflows/explore-data.yml"]
+  workflow_dispatch:
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Télécharger et inspecter
+        run: |
+          B=https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets
+          for ds in arrets-lignes zones-d-arrets arrets relations referentiel-des-lignes zones-de-correspondance; do
+            echo "=================== $ds"
+            curl -sL --max-time 300 "$B/$ds/exports/csv?delimiter=%3B" -o $ds.csv || true
+            ls -la $ds.csv; wc -l $ds.csv
+            head -c 1500 $ds.csv; echo
+            echo "--- grep ids"
+            grep -m 6 -E '(^|[;:])(71264|60797|474151|71410|73794|22146|463079)([;:]|$)' $ds.csv | cut -c1-400 || true
+          done
