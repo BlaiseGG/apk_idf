@@ -87,11 +87,11 @@ Permissions (`AndroidManifest.xml`) : `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCES
 
 ## 5. Obtenir l'APK
 
-### Option A — sans rien installer (GitHub Actions)
-Chaque push compile automatiquement l'APK.
-1. Onglet **Actions** du dépôt → dernier run « Build APK » (vert).
-2. Section **Artifacts** → télécharger `quai-apk` (zip contenant `app-debug.apk` et `app-release.apk`).
-3. Sur le téléphone : ouvrir l'APK, autoriser « Installer des applis inconnues » pour le navigateur / gestionnaire de fichiers.
+### Option A — lien direct (le plus simple)
+Chaque push publie automatiquement la dernière version :
+**https://github.com/BlaiseGG/apk_idf/releases/latest/download/Quai.apk**
+
+Ouvrir ce lien sur le téléphone, puis ouvrir `Quai.apk` et autoriser « Installer des applis inconnues ».
 
 ### Option B — Android Studio
 1. Installer Android Studio (Ladybug ou plus récent), ouvrir le dossier du projet.
