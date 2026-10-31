@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -38,6 +40,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,6 +80,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blaisegg.idfwidget.data.DirectionChoice
 import com.blaisegg.idfwidget.data.DirectionGroup
 import com.blaisegg.idfwidget.data.LineItem
+import com.blaisegg.idfwidget.data.ModeCategory
 import com.blaisegg.idfwidget.data.Passage
 import com.blaisegg.idfwidget.data.StopItem
 import com.blaisegg.idfwidget.data.Trajet
@@ -130,7 +134,7 @@ fun AppScreen(vm: MainViewModel, widgetMode: Boolean, onExit: () -> Unit) {
                 Step.LOADING -> Centered { CircularProgressIndicator() }
                 Step.API_KEY -> ApiKeyStep(state.apiKey, onSave = vm::saveApiKey)
                 Step.SEARCH -> SearchStep(state, vm)
-                Step.LINES -> ListStep(state.lines) { lines -> LinesList(lines, vm::selectLine) }
+                Step.LINES -> ListStep(state.lines) { lines -> LinesStep(lines, state.hiddenModes, vm) }
                 Step.DIRECTIONS -> ListStep(state.directions) { d -> DirectionsList(d.choices, vm::selectDirection) }
                 Step.SUMMARY -> SummaryStep(state, widgetMode, vm)
             }
@@ -206,20 +210,31 @@ private fun SearchStep(state: UiState, vm: MainViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        ModeFilterRow(SEARCH_MODES, state.hiddenModes, vm::toggleMode)
         HorizontalDivider()
         ListStep(state.stops, idleText = "Localisez-vous ou tapez au moins 2 lettres.") { stops ->
-            if (stops.isEmpty()) Centered { Text("Aucun arrêt trouvé.") } else StopsList(stops, vm::selectStop)
+            // Un arrêt reste visible s'il dessert au moins un mode non masqué (ou si ses modes sont inconnus).
+            val visible = stops.filter { it.modes.isEmpty() || (it.modes - state.hiddenModes).isNotEmpty() }
+            when {
+                stops.isEmpty() -> Centered { Text("Aucun arrêt trouvé.") }
+                visible.isEmpty() -> Centered { Text("Aucun arrêt avec les modes sélectionnés.", textAlign = TextAlign.Center) }
+                else -> StopsList(visible, state.hiddenModes, vm::selectStop)
+            }
         }
     }
 }
 
 @Composable
-private fun StopsList(stops: List<StopItem>, onClick: (StopItem) -> Unit) {
+private fun StopsList(stops: List<StopItem>, hidden: Set<ModeCategory>, onClick: (StopItem) -> Unit) {
     LazyColumn {
         items(stops, key = { it.id }) { stop ->
+            val details = listOfNotNull(
+                (stop.modes - hidden).joinToString(" · ") { it.label }.ifBlank { null },
+                stop.distanceMeters?.let { "à $it m" },
+            ).joinToString("   ")
             ListItem(
                 headlineContent = { Text(stop.name) },
-                supportingContent = { stop.distanceMeters?.let { d -> Text("à $d m") } },
+                supportingContent = { if (details.isNotEmpty()) Text(details) },
                 leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null) },
                 modifier = Modifier.clickable { onClick(stop) },
             )
@@ -231,16 +246,60 @@ private fun StopsList(stops: List<StopItem>, onClick: (StopItem) -> Unit) {
 // ------------------------------------------------------------------ Lignes
 
 @Composable
-private fun LinesList(lines: List<LineItem>, onClick: (LineItem) -> Unit) {
-    LazyColumn {
-        items(lines, key = { it.id }) { line ->
-            ListItem(
-                headlineContent = { Text(line.name) },
-                supportingContent = { Text(line.mode) },
-                leadingContent = { LineBadge(line.code, line.color, line.textColor) },
-                modifier = Modifier.clickable { onClick(line) },
-            )
+private fun LinesStep(lines: List<LineItem>, hidden: Set<ModeCategory>, vm: MainViewModel) {
+    val present = lines.map { it.category }.distinct().sorted()
+    val grouped = lines.filter { it.category !in hidden }.groupBy { it.category }.toSortedMap()
+    Column(Modifier.fillMaxSize()) {
+        if (present.size > 1) {
+            ModeFilterRow(present, hidden, vm::toggleMode)
             HorizontalDivider()
+        }
+        if (grouped.isEmpty()) {
+            Centered { Text("Toutes les lignes de cet arrêt sont masquées par les filtres.", textAlign = TextAlign.Center) }
+        } else {
+            LazyColumn {
+                grouped.forEach { (category, group) ->
+                    item(key = "header-$category") { SectionHeader(category.label) }
+                    items(group, key = { it.id }) { line ->
+                        ListItem(
+                            headlineContent = { Text(line.name) },
+                            supportingContent = { Text(line.mode) },
+                            leadingContent = { LineBadge(line.code, line.color, line.textColor) },
+                            modifier = Modifier.clickable { vm.selectLine(line) },
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val SEARCH_MODES = listOf(ModeCategory.RER, ModeCategory.METRO, ModeCategory.TRAIN, ModeCategory.TRAM, ModeCategory.BUS)
+
+/** Puces cochables : un mode décoché est masqué (choix mémorisé). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeFilterRow(modes: List<ModeCategory>, hidden: Set<ModeCategory>, onToggle: (ModeCategory) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        modes.forEach { mode ->
+            val selected = mode !in hidden
+            FilterChip(
+                selected = selected,
+                onClick = { onToggle(mode) },
+                label = { Text(mode.label) },
+                leadingIcon = if (selected) {
+                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                } else {
+                    null
+                },
+            )
         }
     }
 }

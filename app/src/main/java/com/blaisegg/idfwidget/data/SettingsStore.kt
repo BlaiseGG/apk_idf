@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -25,6 +26,15 @@ class SettingsStore(context: Context) {
     val defaultTrajet: Flow<Trajet?> = store.data.map { decode(it[KEY_DEFAULT]) }
 
     suspend fun apiKeyNow(): String = apiKey.first()
+
+    /** Modes masqués dans les listes (ex. Bus). */
+    val hiddenModes: Flow<Set<ModeCategory>> = store.data.map { prefs ->
+        prefs[KEY_HIDDEN_MODES].orEmpty().mapNotNull { runCatching { ModeCategory.valueOf(it) }.getOrNull() }.toSet()
+    }
+
+    suspend fun setHiddenModes(modes: Set<ModeCategory>) {
+        store.edit { it[KEY_HIDDEN_MODES] = modes.map { m -> m.name }.toSet() }
+    }
 
     suspend fun setApiKey(key: String) {
         store.edit { it[KEY_API] = key.trim() }
@@ -67,6 +77,7 @@ class SettingsStore(context: Context) {
         const val WIDGET_PREFIX = "widget_"
         val KEY_API = stringPreferencesKey("api_key")
         val KEY_DEFAULT = stringPreferencesKey("default_trajet")
+        val KEY_HIDDEN_MODES = stringSetPreferencesKey("hidden_modes")
         fun widgetKey(id: Int) = stringPreferencesKey("$WIDGET_PREFIX$id")
     }
 }

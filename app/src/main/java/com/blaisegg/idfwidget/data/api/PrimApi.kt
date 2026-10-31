@@ -19,7 +19,8 @@ interface PrimApi {
         @Header("apikey") apiKey: String,
         @Query("q") query: String,
         @Query("type[]") type: String = "stop_area",
-        @Query("count") count: Int = 20,
+        @Query("count") count: Int = 30,
+        @Query("depth") depth: Int = 2, // inclut les modes desservis par l'arrêt
     ): PlacesResponse
 
     @GET("v2/navitia/coord/{lon};{lat}/places_nearby")
@@ -28,8 +29,9 @@ interface PrimApi {
         @Path("lon") lon: Double,
         @Path("lat") lat: Double,
         @Query("type[]") type: String = "stop_area",
-        @Query("distance") distance: Int = 1000,
-        @Query("count") count: Int = 25,
+        @Query("distance") distance: Int = 1500,
+        @Query("count") count: Int = 60, // large : les arrêts de bus sont nombreux et peuvent être filtrés
+        @Query("depth") depth: Int = 2,
     ): PlacesNearbyResponse
 
     @GET("v2/navitia/stop_areas/{stopArea}/lines")

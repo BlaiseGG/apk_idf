@@ -32,7 +32,7 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
     suspend fun linesAt(apiKey: String, stopAreaId: String): List<LineItem> = call {
         api.linesOfStopArea(requireKey(apiKey), stopAreaId).lines
             .map { it.toLine() }
-            .sortedWith(compareBy({ modeOrder(it.mode) }, { it.code.padStart(4, '0') }))
+            .sortedWith(compareBy({ it.category.ordinal }, { it.code.padStart(4, '0') }))
     }
 
     /**
@@ -189,6 +189,10 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             id = sa.id.ifBlank { id },
             name = name.ifBlank { sa.label ?: sa.name },
             distanceMeters = distance?.toDoubleOrNull()?.toInt(),
+            modes = (sa.commercialModes + sa.physicalModes)
+                .map { ModeCategory.of(it.name.ifBlank { it.id }) }
+                .filter { it != ModeCategory.OTHER }
+                .toSortedSet(),
         )
     }
 
@@ -200,18 +204,6 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         color = color?.takeIf { it.length == 6 } ?: "5A5A5A",
         textColor = textColor?.takeIf { it.length == 6 } ?: "FFFFFF",
     )
-
-    private fun modeOrder(mode: String): Int {
-        val m = IdMapper.normalize(mode)
-        return when {
-            m.contains("rer") -> 0
-            m.contains("metro") -> 1
-            m.contains("train") || m.contains("transilien") || m.contains("ter") -> 2
-            m.contains("tram") -> 3
-            m.contains("bus") -> 5
-            else -> 4
-        }
-    }
 
     private companion object {
         const val MAX_ROUTES = 16

@@ -7,6 +7,7 @@ import com.blaisegg.idfwidget.app
 import com.blaisegg.idfwidget.data.DirectionChoice
 import com.blaisegg.idfwidget.data.LineAtStop
 import com.blaisegg.idfwidget.data.LineItem
+import com.blaisegg.idfwidget.data.ModeCategory
 import com.blaisegg.idfwidget.data.Passage
 import com.blaisegg.idfwidget.data.PrimException
 import com.blaisegg.idfwidget.data.StopItem
@@ -45,6 +46,7 @@ data class UiState(
     val preview: Load<List<Passage>> = Load.Idle,
     val finished: Boolean = false,     // mode configuration : fermer l'écran
     val snackbar: String? = null,
+    val hiddenModes: Set<ModeCategory> = emptySet(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -66,6 +68,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         widgetId = appWidgetId
         viewModelScope.launch {
             val key = settings.apiKey.first()
+            val hidden = settings.hiddenModes.first()
             val widgetTrajet = appWidgetId?.let { settings.widgetTrajet(it) }
             val default = settings.defaultTrajet.first()
             val trajet = widgetTrajet ?: default
@@ -74,6 +77,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update {
                 it.copy(
                     apiKey = key,
+                    hiddenModes = hidden,
                     trajet = trajet,
                     saved = saved,
                     step = when {
@@ -151,6 +155,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onLocationDenied() = _state.update {
         it.copy(stops = Load.Err("Permission de localisation refusée : recherchez la station par son nom."))
+    }
+
+    fun toggleMode(mode: ModeCategory) {
+        val hidden = _state.value.hiddenModes.let { if (mode in it) it - mode else it + mode }
+        _state.update { it.copy(hiddenModes = hidden) }
+        viewModelScope.launch { settings.setHiddenModes(hidden) }
     }
 
     // ---------------- Ligne ----------------

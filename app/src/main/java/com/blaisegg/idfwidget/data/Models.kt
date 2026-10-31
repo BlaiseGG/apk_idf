@@ -7,7 +7,28 @@ data class StopItem(
     val id: String,          // ex: stop_area:IDFM:71517
     val name: String,
     val distanceMeters: Int? = null,
+    val modes: Set<ModeCategory> = emptySet(), // vide = inconnu
 )
+
+/** Familles de transport, dans l'ordre d'affichage. */
+enum class ModeCategory(val label: String) {
+    RER("RER"), METRO("Métro"), TRAIN("Train"), TRAM("Tram"), BUS("Bus"), OTHER("Autre");
+
+    companion object {
+        fun of(mode: String?): ModeCategory {
+            val m = IdMapper.normalize(mode)
+            return when {
+                m.isEmpty() -> OTHER
+                m.contains("rer") || m.contains("rapidtransit") -> RER
+                m.contains("metro") -> METRO
+                m.contains("tram") -> TRAM
+                m.contains("train") || m.contains("transilien") || m == "ter" || m.contains("localtrain") -> TRAIN
+                m.contains("bus") || m.contains("noctilien") || m.contains("coach") -> BUS
+                else -> OTHER
+            }
+        }
+    }
+}
 
 /** Ligne desservant un arrêt. */
 data class LineItem(
@@ -17,7 +38,9 @@ data class LineItem(
     val mode: String,        // ex: RER, Métro, Tramway, Train, Bus
     val color: String,       // hex sans '#'
     val textColor: String,
-)
+) {
+    val category: ModeCategory get() = ModeCategory.of(mode)
+}
 
 /**
  * Trajet associé à un widget : arrêt + ligne + direction (null = toutes directions).
