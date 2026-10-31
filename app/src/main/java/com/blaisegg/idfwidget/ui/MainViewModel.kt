@@ -12,6 +12,7 @@ import com.blaisegg.idfwidget.data.Passage
 import com.blaisegg.idfwidget.data.PrimException
 import com.blaisegg.idfwidget.data.StopItem
 import com.blaisegg.idfwidget.data.Trajet
+import com.blaisegg.idfwidget.live.LiveTracker
 import com.blaisegg.idfwidget.location.LocationHelper
 import com.blaisegg.idfwidget.widget.RefreshScheduler
 import kotlinx.coroutines.Job
@@ -47,6 +48,7 @@ data class UiState(
     val finished: Boolean = false,     // mode configuration : fermer l'écran
     val snackbar: String? = null,
     val hiddenModes: Set<ModeCategory> = emptySet(),
+    val liveActive: Boolean = false,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -156,6 +158,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onLocationDenied() = _state.update {
         it.copy(stops = Load.Err("Permission de localisation refusée : recherchez la station par son nom."))
     }
+
+    fun refreshLiveState() = _state.update { it.copy(liveActive = LiveTracker.isActive(getApplication())) }
 
     fun toggleMode(mode: ModeCategory) {
         val hidden = _state.value.hiddenModes.let { if (mode in it) it - mode else it + mode }

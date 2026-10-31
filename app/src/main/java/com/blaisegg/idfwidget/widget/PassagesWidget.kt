@@ -28,6 +28,7 @@ import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
@@ -49,6 +50,8 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.blaisegg.idfwidget.R
+import com.blaisegg.idfwidget.live.LiveTracker
+import com.blaisegg.idfwidget.ui.MainActivity
 import com.blaisegg.idfwidget.ui.WidgetConfigActivity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -125,6 +128,22 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
                     modifier = GlanceModifier.size(22.dp).clickable(actionRunCallback<RefreshAction>()),
                 )
             }
+            Spacer(GlanceModifier.width(10.dp))
+            // Suivi en direct dans la barre d'état (jaune = actif).
+            val liveActive = LiveTracker.isActive(context)
+            Image(
+                provider = ImageProvider(R.drawable.ic_live),
+                contentDescription = "Suivi en direct",
+                colorFilter = ColorFilter.tint(ColorProvider(if (liveActive) Yellow else Grey)),
+                modifier = GlanceModifier.size(20.dp).clickable(
+                    if (LiveTracker.hasPermission(context)) {
+                        actionRunCallback<ToggleLiveAction>()
+                    } else {
+                        // La permission de notification ne peut être demandée que depuis l'app.
+                        actionStartActivity(MainActivity.startLiveIntent(context, appWidgetId))
+                    },
+                ),
+            )
             Spacer(GlanceModifier.width(10.dp))
             Image(
                 provider = ImageProvider(R.drawable.ic_settings),
@@ -235,6 +254,18 @@ private fun configIntent(context: Context, appWidgetId: Int): Intent =
         .putExtra(WidgetConfigActivity.EXTRA_RECONFIGURE, true)
         .setData(Uri.parse("idfwidget://config/$appWidgetId")) // PendingIntent distinct par widget
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+/** Icône cloche du widget : démarre / arrête le suivi en direct. */
+class ToggleLiveAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        if (LiveTracker.isActive(context)) {
+            LiveTracker.stop(context)
+        } else {
+            LiveTracker.start(context, GlanceAppWidgetManager(context).getAppWidgetId(glanceId))
+        }
+        PassagesWidget().updateAll(context)
+    }
+}
 
 /** Toucher du widget : affiche immédiatement le chargement puis interroge l'API. */
 class RefreshAction : ActionCallback {

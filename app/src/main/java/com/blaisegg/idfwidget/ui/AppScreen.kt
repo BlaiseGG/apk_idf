@@ -90,7 +90,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppScreen(vm: MainViewModel, widgetMode: Boolean, onExit: () -> Unit) {
+fun AppScreen(vm: MainViewModel, widgetMode: Boolean, onExit: () -> Unit, onToggleLive: (() -> Unit)? = null) {
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
@@ -136,7 +136,7 @@ fun AppScreen(vm: MainViewModel, widgetMode: Boolean, onExit: () -> Unit) {
                 Step.SEARCH -> SearchStep(state, vm)
                 Step.LINES -> ListStep(state.lines) { lines -> LinesStep(lines, state.hiddenModes, vm) }
                 Step.DIRECTIONS -> ListStep(state.directions) { d -> DirectionsList(d.choices, vm::selectDirection) }
-                Step.SUMMARY -> SummaryStep(state, widgetMode, vm)
+                Step.SUMMARY -> SummaryStep(state, widgetMode, vm, onToggleLive)
             }
         }
     }
@@ -398,7 +398,7 @@ private fun SectionHeader(text: String) {
 // ------------------------------------------------------------------ Récapitulatif
 
 @Composable
-private fun SummaryStep(state: UiState, widgetMode: Boolean, vm: MainViewModel) {
+private fun SummaryStep(state: UiState, widgetMode: Boolean, vm: MainViewModel, onToggleLive: (() -> Unit)?) {
     val trajet = state.trajet ?: return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -416,6 +416,16 @@ private fun SummaryStep(state: UiState, widgetMode: Boolean, vm: MainViewModel) 
             Text(
                 if (widgetMode) "Ce trajet est associé à ce widget." else "Ce trajet est affiché par vos widgets.",
                 style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (onToggleLive != null && state.saved) {
+            Button(onClick = onToggleLive, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state.liveActive) "Arrêter le suivi en direct" else "Suivre en direct en haut de l'écran")
+            }
+            Text(
+                "Affiche l'heure du prochain passage dans la barre d'état (Android 16+), " +
+                    "sinon dans une notification. Mise à jour chaque minute, arrêt automatique après 1 h.",
+                style = MaterialTheme.typography.bodySmall,
             )
         }
         OutlinedButton(onClick = vm::startSearch, modifier = Modifier.fillMaxWidth()) {
