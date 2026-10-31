@@ -315,7 +315,11 @@ private fun footer(prefs: Preferences, status: Status): String {
     return when (status) {
         Status.LOADING -> "Actualisation…"
         Status.ERROR -> if (updated != null) "Échec · dernière maj $updated" else "Toucher pour réessayer"
-        else -> if (updated != null) "Mis à jour à $updated" else ""
+        else -> when {
+            updated == null -> ""
+            prefs[WidgetKeys.theoretical] == true -> "Horaires théoriques (pas de temps réel) · $updated"
+            else -> "Mis à jour à $updated"
+        }
     }
 }
 

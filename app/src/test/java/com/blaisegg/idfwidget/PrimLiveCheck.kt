@@ -23,9 +23,8 @@ class PrimLiveCheck {
     private fun log(s: String) = println("CHECK| $s")
 
     private val stations = listOf(
-        "Gare du Nord", "Châtelet", "Châtelet les Halles", "Gare de Lyon", "La Défense",
-        "Gare Saint-Lazare", "Haussmann Saint-Lazare", "Montparnasse", "Nation", "Saint-Michel Notre-Dame",
-        "Grigny Centre", "Juvisy", "Massy Palaiseau", "Gare de l'Est", "Marne-la-Vallée Chessy",
+        // Contrôle léger (quota PRIM) : gares à problème + quelques références.
+        "Châtelet", "Châtelet les Halles", "Saint-Michel Notre-Dame", "Gare du Nord", "Grigny Centre", "Juvisy",
     )
 
     /** Pour un trajet sans passage : que renvoie vraiment le temps réel pour chaque quai ? */

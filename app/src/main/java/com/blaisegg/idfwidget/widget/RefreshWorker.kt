@@ -66,6 +66,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     prefs[WidgetKeys.departures] = passages.take(4).joinToString(",") { it.epochMillis.toString() }
                     prefs[WidgetKeys.status] = if (passages.isEmpty()) Status.EMPTY.name else Status.OK.name
                     prefs[WidgetKeys.updatedAt] = System.currentTimeMillis()
+                    prefs[WidgetKeys.theoretical] = passages.isNotEmpty() && passages.all { it.theoretical }
                     prefs.remove(WidgetKeys.message)
                 }.onFailure { e ->
                     prefs[WidgetKeys.status] = Status.ERROR.name

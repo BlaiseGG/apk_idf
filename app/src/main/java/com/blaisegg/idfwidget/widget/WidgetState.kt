@@ -18,6 +18,7 @@ object WidgetKeys {
     val lineTextColor = stringPreferencesKey("line_text_color")
     val direction = stringPreferencesKey("direction")
     val mode = stringPreferencesKey("mode")
+    val theoretical = androidx.datastore.preferences.core.booleanPreferencesKey("theoretical")
 }
 
 enum class Status { NOT_CONFIGURED, LOADING, OK, EMPTY, ERROR }

@@ -20,9 +20,24 @@ object Network {
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            // PRIM limite le nombre d'appels par seconde : peu d'appels simultanés…
+            .dispatcher(okhttp3.Dispatcher().apply { maxRequestsPerHost = 4 })
+            // …et nouvelle tentative automatique si PRIM répond « trop d'appels » (429).
+            .addInterceptor { chain ->
+                var response = chain.proceed(chain.request())
+                var attempt = 0
+                while (response.code == 429 && attempt < 3) {
+                    val wait = response.header("Retry-After")?.toLongOrNull()?.times(1000) ?: (1000L shl attempt)
+                    response.close()
+                    Thread.sleep(wait.coerceAtMost(5_000))
+                    attempt++
+                    response = chain.proceed(chain.request())
+                }
+                response
+            }
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(

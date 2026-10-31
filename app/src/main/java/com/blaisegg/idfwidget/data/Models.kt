@@ -92,6 +92,8 @@ data class Passage(
     val epochMillis: Long,
     val destination: String,
     val atStop: Boolean,
+    /** true = horaire théorique (le temps réel ne répond pas pour cet arrêt). */
+    val theoretical: Boolean = false,
 )
 
 class PrimException(message: String, cause: Throwable? = null) : Exception(message, cause)

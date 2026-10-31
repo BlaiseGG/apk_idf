@@ -6,8 +6,6 @@ on:
   push:
     paths:
       - "app/src/test/**"
-      - "app/src/main/java/com/blaisegg/idfwidget/data/**"
-      - ".github/workflows/check-prim.yml"
   workflow_dispatch:
 
 jobs:

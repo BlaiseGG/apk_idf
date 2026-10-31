@@ -517,8 +517,9 @@ private fun BoardPreview(trajet: Trajet, preview: Load<List<Passage>>, onRefresh
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+            val theoretical = (preview as? Load.Ok)?.data?.let { p -> p.isNotEmpty() && p.all { it.theoretical } } == true
             Text(
-                "Toucher pour rafraîchir",
+                if (theoretical) "Horaires théoriques (pas de temps réel) · toucher pour rafraîchir" else "Toucher pour rafraîchir",
                 color = Color(0xFFB8C4D6),
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center,

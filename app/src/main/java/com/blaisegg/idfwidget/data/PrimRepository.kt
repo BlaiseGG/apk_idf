@@ -261,7 +261,8 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         val targets = trajet.directionTargets.ifEmpty { listOfNotNull(trajet.direction) }
         val served = trajet.directionMissions.map(IdMapper::normalize).toSet()
         val excluded = trajet.excludedMissions.map(IdMapper::normalize).toSet()
-        fetchVisits(requireKey(apiKey), trajet.stopAreaId, trajet.monitoringRefs)
+        val key = requireKey(apiKey)
+        val live = fetchVisits(key, trajet.stopAreaId, trajet.monitoringRefs)
             .asSequence()
             .filter { matchesLine(it, trajet.lineId) }
             .mapNotNull { v ->
@@ -279,7 +280,41 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             .distinctBy { it.epochMillis / 1000 to it.destination }
             .sortedBy { it.epochMillis }
             .toList()
+        // Temps réel muet pour cet arrêt (ça arrive, ex. métro à Châtelet) : horaires théoriques.
+        live.ifEmpty { theoreticalPassages(key, trajet, targets, served, excluded, now) }
     }
+
+    private suspend fun theoreticalPassages(
+        key: String,
+        trajet: Trajet,
+        targets: List<String>,
+        served: Set<String>,
+        excluded: Set<String>,
+        now: Long,
+    ): List<Passage> {
+        val deps = runCatching {
+            api.departures(key, trajet.stopAreaId, trajet.lineId, count = 30, dataFreshness = "realtime", depth = 0).departures
+        }.getOrDefault(emptyList())
+        return deps.mapNotNull { d ->
+            val time = d.stopDateTime?.departure?.let(::parseNavitiaTime) ?: return@mapNotNull null
+            val mission = d.display?.headsign?.let(IdMapper::normalize)?.takeIf { it.isNotEmpty() }
+            val direction = d.display?.direction.orEmpty()
+            val keep = when {
+                mission != null && mission in served -> true
+                mission != null && mission in excluded -> false
+                targets.isEmpty() -> true
+                else -> targets.any { IdMapper.sameDirection(direction.substringBefore(" ("), it) }
+            }
+            if (keep) Passage(time, direction.substringBefore(" ("), atStop = false, theoretical = true) else null
+        }
+            .filter { it.epochMillis >= now - 30_000 }
+            .sortedBy { it.epochMillis }
+    }
+
+    private fun parseNavitiaTime(s: String): Long? = runCatching {
+        java.time.LocalDateTime.parse(s, java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss"))
+            .atZone(java.time.ZoneId.of("Europe/Paris")).toInstant().toEpochMilli()
+    }.getOrNull()
 
     // ------------------------------------------------------------------
 

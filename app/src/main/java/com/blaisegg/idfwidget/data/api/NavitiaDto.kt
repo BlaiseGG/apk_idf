@@ -96,6 +96,12 @@ data class DeparturesResponse(val departures: List<DepartureDto> = emptyList())
 data class DepartureDto(
     @SerialName("display_informations") val display: DisplayInfoDto? = null,
     val links: List<LinkDto> = emptyList(),
+    @SerialName("stop_date_time") val stopDateTime: StopDateTimeDto? = null,
+)
+
+@Serializable
+data class StopDateTimeDto(
+    @SerialName("departure_date_time") val departure: String? = null, // ex. 20261031T141000, heure de Paris
 )
 
 @Serializable
