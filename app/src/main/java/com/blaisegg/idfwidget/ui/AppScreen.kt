@@ -186,16 +186,25 @@ private fun SearchStep(state: UiState, vm: MainViewModel) {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted -> if (granted.values.any { it }) vm.locate() else vm.onLocationDenied() }
 
+    val requestLocate = {
+        val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (ok) vm.locate() else permissionLauncher.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+        )
+    }
+    // Ouvert depuis le bouton « Localiser » du widget : on localise tout de suite.
+    LaunchedEffect(state.autoLocate) {
+        if (state.autoLocate) {
+            vm.autoLocateConsumed()
+            requestLocate()
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
-                onClick = {
-                    val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-                        PackageManager.PERMISSION_GRANTED
-                    if (ok) vm.locate() else permissionLauncher.launch(
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                    )
-                },
+                onClick = { requestLocate() },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 Icon(Icons.Default.LocationOn, contentDescription = null)

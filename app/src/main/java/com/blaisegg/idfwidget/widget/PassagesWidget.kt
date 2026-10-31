@@ -87,7 +87,7 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
     val compact = size.height < 100.dp
     // Assez de hauteur : rangée de gros boutons en bas. Sinon : boutons agrandis dans l'en-tête.
     val bottomBar = size.height >= 125.dp
-    val showLabels = size.width >= 230.dp
+    val showLabels = size.width >= 320.dp
     val status = prefs.status()
 
     val refreshAction = actionRunCallback<RefreshAction>()
@@ -99,6 +99,7 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
         actionStartActivity(MainActivity.startLiveIntent(context, appWidgetId))
     }
     val settingsAction = actionStartActivity(configIntent(context, appWidgetId))
+    val locateAction = actionStartActivity(configIntent(context, appWidgetId, locate = true))
 
     Column(
         modifier = GlanceModifier
@@ -137,6 +138,8 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
             if (!bottomBar) {
                 // Petit widget : boutons carrés de 40 dp, bien espacés.
                 HeaderButton(R.drawable.ic_refresh, "Rafraîchir", White, refreshAction, loading = status == Status.LOADING)
+                Spacer(GlanceModifier.width(6.dp))
+                HeaderButton(R.drawable.ic_location, "Localiser", White, locateAction)
                 Spacer(GlanceModifier.width(6.dp))
                 HeaderButton(R.drawable.ic_live, "Suivi en direct", if (liveActive) Yellow else White, liveAction)
                 Spacer(GlanceModifier.width(6.dp))
@@ -178,6 +181,8 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
                     R.drawable.ic_refresh, if (status == Status.LOADING) "…" else "Actualiser", White,
                     refreshAction, showLabels, loading = status == Status.LOADING,
                 )
+                Spacer(GlanceModifier.width(8.dp))
+                BarButton(R.drawable.ic_location, "Localiser", White, locateAction, showLabels)
                 Spacer(GlanceModifier.width(8.dp))
                 BarButton(
                     R.drawable.ic_live, if (liveActive) "Suivi actif" else "Suivi", if (liveActive) Yellow else White,
@@ -317,11 +322,13 @@ private fun footer(prefs: Preferences, status: Status): String {
 private fun parseColor(hex: String?, fallback: Color): Color =
     runCatching { Color(android.graphics.Color.parseColor("#$hex")) }.getOrDefault(fallback)
 
-private fun configIntent(context: Context, appWidgetId: Int): Intent =
+private fun configIntent(context: Context, appWidgetId: Int, locate: Boolean = false): Intent =
     Intent(context, WidgetConfigActivity::class.java)
         .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         .putExtra(WidgetConfigActivity.EXTRA_RECONFIGURE, true)
-        .setData(Uri.parse("idfwidget://config/$appWidgetId")) // PendingIntent distinct par widget
+        .putExtra(WidgetConfigActivity.EXTRA_LOCATE, locate)
+        // PendingIntent distinct par widget et par bouton
+        .setData(Uri.parse("idfwidget://${if (locate) "locate" else "config"}/$appWidgetId"))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
 /** Icône cloche du widget : démarre / arrête le suivi en direct. */

@@ -49,6 +49,7 @@ data class UiState(
     val snackbar: String? = null,
     val hiddenModes: Set<ModeCategory> = emptySet(),
     val liveActive: Boolean = false,
+    val autoLocate: Boolean = false,   // lancer « Localiser » dès l'ouverture (bouton du widget)
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -64,7 +65,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var started = false
 
-    fun start(appWidgetId: Int?) {
+    fun start(appWidgetId: Int?, autoLocate: Boolean = false) {
         if (started) return
         started = true
         widgetId = appWidgetId
@@ -82,8 +83,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     hiddenModes = hidden,
                     trajet = trajet,
                     saved = saved,
+                    autoLocate = autoLocate && key.isNotBlank(),
                     step = when {
                         key.isBlank() -> Step.API_KEY
+                        autoLocate -> Step.SEARCH
                         trajet != null -> Step.SUMMARY
                         else -> Step.SEARCH
                     },
@@ -154,6 +157,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(stops = result) }
         }
     }
+
+    fun autoLocateConsumed() = _state.update { it.copy(autoLocate = false) }
 
     fun onLocationDenied() = _state.update {
         it.copy(stops = Load.Err("Permission de localisation refusée : recherchez la station par son nom."))

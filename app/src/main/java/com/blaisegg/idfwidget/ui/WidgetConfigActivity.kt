@@ -29,7 +29,7 @@ class WidgetConfigActivity : ComponentActivity() {
         val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         setResult(RESULT_CANCELED, result)
 
-        vm.start(appWidgetId)
+        vm.start(appWidgetId, autoLocate = intent.getBooleanExtra(EXTRA_LOCATE, false))
         setContent {
             val state by vm.state.collectAsStateWithLifecycle()
             LaunchedEffect(state.finished) {
@@ -44,5 +44,6 @@ class WidgetConfigActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_RECONFIGURE = "reconfigure"
+        const val EXTRA_LOCATE = "locate"
     }
 }
