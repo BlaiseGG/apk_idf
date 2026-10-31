@@ -185,7 +185,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val s = _state.value
         val stop = s.stop ?: return
         val line = s.line ?: return
-        val refs = (s.directions as? Load.Ok)?.data?.refs.orEmpty()
+        val refs = (s.directions as? Load.Ok<DirectionsData>)?.data?.refs.orEmpty()
         val trajet = Trajet(
             stopAreaId = stop.id,
             stopName = stop.name,
