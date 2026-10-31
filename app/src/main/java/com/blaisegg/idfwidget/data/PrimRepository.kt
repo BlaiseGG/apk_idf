@@ -62,10 +62,15 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
             }.getOrDefault(emptyList())
         }
 
-        val routes = runCatching { api.routes(key, stopAreaId, line.id).routes }.getOrDefault(emptyList())
-        val infos = routes.take(MAX_ROUTES).map { route ->
-            async { analyzeRoute(key, route.id, terminusOf(route.direction?.stopArea?.name, route.direction?.name, route.name), stationIds, stationDistance) }
-        }.awaitAll()
+        // 1. Méthode précise : les vrais prochains départs de cet arrêt, une circulation par mission.
+        var infos = missionsFromDepartures(key, stopAreaId, line.id, stationIds, stationDistance)
+        // 2. Repli (ex. la nuit) : quelques circulations de chaque parcours.
+        if (infos.isEmpty()) {
+            val routes = runCatching { api.routes(key, stopAreaId, line.id).routes }.getOrDefault(emptyList())
+            infos = routes.take(MAX_ROUTES).map { route ->
+                async { analyzeRoute(key, route.id, terminusOf(route.direction?.stopArea?.name, route.direction?.name, route.name), stationIds, stationDistance) }
+            }.awaitAll()
+        }
 
         // Gare desservie -> terminus et missions qui y vont.
         val stations = linkedMapOf<String, StationAcc>()
@@ -95,10 +100,14 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         val allMissions = infos.flatMap { it.missions }.toSet()
         val choices = mutableListOf<DirectionChoice>()
         if (parisTermini.isNotEmpty()) {
-            choices += DirectionChoice("Paris", parisTermini, DirectionGroup.PARIS, (allMissions - parisMissions).toList())
+            choices += DirectionChoice(
+                "Paris", parisTermini, DirectionGroup.PARIS, parisMissions.toList(), (allMissions - parisMissions).toList(),
+            )
         }
         stations.values.sortedBy { IdMapper.normalize(it.name) }.forEach {
-            choices += DirectionChoice(it.name, it.termini, DirectionGroup.STATION, (allMissions - it.missions).toList())
+            choices += DirectionChoice(
+                it.name, it.termini, DirectionGroup.STATION, it.missions.toList(), (allMissions - it.missions).toList(),
+            )
         }
         // Destinations annoncées en temps réel mais inconnues du référentiel.
         for (label in liveLabels.await()) {
@@ -125,6 +134,44 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
 
     private fun MutableList<String>.addUnique(label: String) {
         if (label.isNotBlank() && none { IdMapper.normalize(it) == IdMapper.normalize(label) }) add(label)
+    }
+
+    /**
+     * Prochains départs (théoriques) de la ligne à l'arrêt, regroupés par code mission ;
+     * pour chaque mission, on lit une circulation complète pour connaître les gares desservies ensuite.
+     */
+    private suspend fun missionsFromDepartures(
+        key: String,
+        stopAreaId: String,
+        lineId: String,
+        stationIds: Set<String>,
+        stationDistance: Double?,
+    ): List<RouteInfo> = coroutineScope {
+        val departures = runCatching { api.departures(key, stopAreaId, lineId).departures }.getOrDefault(emptyList())
+        val byMission = linkedMapOf<String, Pair<String?, String>>() // clé -> (mission, vehicle_journey)
+        for (d in departures) {
+            val vj = d.links.firstOrNull { it.type == "vehicle_journey" }?.id ?: continue
+            val mission = d.display?.headsign?.trim()?.takeIf { it.isNotEmpty() }
+            val k = mission ?: ("dir:" + d.display?.direction.orEmpty())
+            if (k !in byMission) byMission[k] = mission to vj
+        }
+        byMission.values.take(MAX_MISSIONS).map { (mission, vjId) ->
+            async {
+                val vj = runCatching { api.vehicleJourney(key, vjId).vehicleJourneys.firstOrNull() }.getOrNull()
+                    ?: return@async null
+                val idx = vj.stopTimes.indexOfFirst { st -> st.stopPoint?.id?.let { it in stationIds } == true }
+                if (idx < 0) return@async null
+                val after = vj.stopTimes.drop(idx + 1).mapNotNull { it.stopPoint }
+                if (after.isEmpty()) return@async null
+                val names = after.map { sp -> sp.stopArea?.name?.takeIf { it.isNotBlank() } ?: sp.name }.filter { it.isNotBlank() }
+                RouteInfo(
+                    terminus = names.lastOrNull().orEmpty(),
+                    towardsParis = towardsParis(after, stationDistance),
+                    stationsAfter = names.associateWith { setOfNotNull(mission) },
+                    missions = setOfNotNull(mission),
+                )
+            }
+        }.awaitAll().filterNotNull()
     }
 
     /** Lit quelques circulations du parcours pour connaître les gares desservies après l'arrêt et le sens. */
@@ -177,13 +224,22 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
     suspend fun nextPassages(apiKey: String, trajet: Trajet): List<Passage> = call {
         val now = System.currentTimeMillis()
         val targets = trajet.directionTargets.ifEmpty { listOfNotNull(trajet.direction) }
+        val served = trajet.directionMissions.map(IdMapper::normalize).toSet()
         val excluded = trajet.excludedMissions.map(IdMapper::normalize).toSet()
         fetchVisits(requireKey(apiKey), trajet.stopAreaId, trajet.monitoringRefs)
             .asSequence()
             .filter { matchesLine(it, trajet.lineId) }
-            // Écarte les missions connues pour ne pas s'arrêter à la gare choisie (ex. trains directs).
-            .filter { v -> v.journey?.journeyNote?.firstValue()?.let { IdMapper.normalize(it) !in excluded } ?: true }
-            .mapNotNull { it.toPassage(targets) }
+            .mapNotNull { v ->
+                val mission = v.journey?.journeyNote?.firstValue()?.let(IdMapper::normalize)
+                when {
+                    // Mission connue pour s'arrêter à la gare choisie : gardée quel que soit son terminus.
+                    mission != null && mission in served -> v.toPassage(emptyList())
+                    // Mission connue pour ne pas s'y arrêter : écartée.
+                    mission != null && mission in excluded -> null
+                    // Inconnue : on se fie au terminus.
+                    else -> v.toPassage(targets)
+                }
+            }
             .filter { it.epochMillis >= now - 30_000 }
             .distinctBy { it.epochMillis / 1000 to it.destination }
             .sortedBy { it.epochMillis }
@@ -254,6 +310,7 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
 
     private companion object {
         const val MAX_ROUTES = 16
+        const val MAX_MISSIONS = 20
         const val PARIS_LAT = 48.8566
         const val PARIS_LON = 2.3488
         const val PARIS_RADIUS_KM = 5.0

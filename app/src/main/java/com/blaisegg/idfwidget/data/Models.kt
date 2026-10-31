@@ -60,6 +60,8 @@ data class Trajet(
     val monitoringRefs: List<String> = emptyList(),
     /** Terminus acceptés (ex. « Paris » regroupe Creil, Orry-la-Ville…). Vide = on compare à [direction]. */
     val directionTargets: List<String> = emptyList(),
+    /** Codes mission RER qui s'arrêtent à la gare choisie (acceptés quel que soit le terminus). */
+    val directionMissions: List<String> = emptyList(),
     /** Codes mission RER connus pour NE PAS s'arrêter à la gare choisie (exclus). */
     val excludedMissions: List<String> = emptyList(),
 )
@@ -69,6 +71,7 @@ data class DirectionChoice(
     val label: String,            // affiché : « Paris », « Grigny Centre »…
     val targets: List<String>,    // terminus des trains concernés
     val group: DirectionGroup,
+    val missions: List<String> = emptyList(),
     val excludedMissions: List<String> = emptyList(),
 )
 

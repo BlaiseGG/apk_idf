@@ -89,4 +89,22 @@ data class NavVehicleJourneyDto(
 )
 
 @Serializable
+data class DeparturesResponse(val departures: List<DepartureDto> = emptyList())
+
+@Serializable
+data class DepartureDto(
+    @SerialName("display_informations") val display: DisplayInfoDto? = null,
+    val links: List<LinkDto> = emptyList(),
+)
+
+@Serializable
+data class DisplayInfoDto(
+    val headsign: String? = null,   // code mission RER (ex. VOPA)
+    val direction: String? = null,
+)
+
+@Serializable
+data class LinkDto(val type: String? = null, val id: String? = null)
+
+@Serializable
 data class StopTimeDto(@SerialName("stop_point") val stopPoint: StopPointDto? = null)

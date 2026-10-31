@@ -67,6 +67,25 @@ interface PrimApi {
         @Query("depth") depth: Int = 2,
     ): VehicleJourneysResponse
 
+    /** Prochains départs théoriques de la ligne à l'arrêt (avec code mission et circulation). */
+    @GET("v2/navitia/stop_areas/{stopArea}/lines/{line}/departures")
+    suspend fun departures(
+        @Header("apikey") apiKey: String,
+        @Path("stopArea") stopAreaId: String,
+        @Path("line") lineId: String,
+        @Query("count") count: Int = 80,
+        @Query("data_freshness") dataFreshness: String = "base_schedule",
+        @Query("depth") depth: Int = 1,
+    ): DeparturesResponse
+
+    /** Une circulation précise, avec tous ses arrêts dans l'ordre. */
+    @GET("v2/navitia/vehicle_journeys/{vj}")
+    suspend fun vehicleJourney(
+        @Header("apikey") apiKey: String,
+        @Path("vj") vehicleJourneyId: String,
+        @Query("depth") depth: Int = 2,
+    ): VehicleJourneysResponse
+
     // ---- Temps réel (SIRI-Lite, requête unitaire) ----
 
     @GET("stop-monitoring")
