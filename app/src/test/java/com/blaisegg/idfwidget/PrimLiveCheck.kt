@@ -42,8 +42,11 @@ class PrimLiveCheck {
                 continue
             }
             log("== ${stop.name} [${stop.id}] modes=${stop.modes.joinToString { it.label }} coord=${stop.lat},${stop.lon}")
-            val lines = runCatching { repo.linesAt(key, stop) }.getOrElse {
-                log("   XX lignes : ${it.message}"); continue
+            val linesResult = runCatching { repo.linesAt(key, stop) }
+            val lines = linesResult.getOrNull()
+            if (lines == null) {
+                log("   XX lignes : ${linesResult.exceptionOrNull()?.message}")
+                continue
             }
             val bus = lines.count { it.category == ModeCategory.BUS }
             for (line in lines.filter { it.category != ModeCategory.BUS }) {
