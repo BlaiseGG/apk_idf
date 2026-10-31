@@ -12,5 +12,5 @@
     <path android:fillColor="#FFFFFF" android:pathData="M54,49.5a2.5,2.5 0,1 1,0 5a2.5,2.5 0,1 1,0 -5z" />
     <!-- Queue du Q -->
     <path android:strokeColor="#FFCD00" android:strokeWidth="7" android:strokeLineCap="round"
-        android:pathData="M66,64L77,75" />
+        android:pathData="M63,61L74,72" />
 </vector>
