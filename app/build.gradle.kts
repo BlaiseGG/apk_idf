@@ -15,6 +15,10 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+        // Clé API PRIM intégrée à la compilation depuis le secret GitHub PRIM_API_KEY
+        // (jamais écrite dans le code). Vide = l'app la demande au premier lancement.
+        val primKey = (System.getenv("PRIM_API_KEY") ?: "").replace("\"", "")
+        buildConfigField("String", "PRIM_API_KEY", "\"$primKey\"")
     }
 
     // Signature fixe (sinon chaque compilation GitHub a une clé différente

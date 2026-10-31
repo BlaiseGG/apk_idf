@@ -1,6 +1,7 @@
 package com.blaisegg.idfwidget.data
 
 import android.content.Context
+import com.blaisegg.idfwidget.BuildConfig
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -22,7 +23,8 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class SettingsStore(context: Context) {
     private val store = context.applicationContext.dataStore
 
-    val apiKey: Flow<String> = store.data.map { it[KEY_API].orEmpty() }
+    /** Clé saisie dans l'app, sinon celle intégrée à la compilation. */
+    val apiKey: Flow<String> = store.data.map { it[KEY_API].orEmpty().ifBlank { BuildConfig.PRIM_API_KEY } }
     val defaultTrajet: Flow<Trajet?> = store.data.map { decode(it[KEY_DEFAULT]) }
 
     suspend fun apiKeyNow(): String = apiKey.first()
