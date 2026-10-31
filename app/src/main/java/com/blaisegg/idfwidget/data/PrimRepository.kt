@@ -180,14 +180,14 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
         stationDistance: Double?,
     ): List<RouteInfo> = coroutineScope {
         val departures = runCatching { api.departures(key, stopAreaId, lineId).departures }.getOrDefault(emptyList())
-        val byMission = linkedMapOf<String, Pair<String?, String>>() // clé -> (mission, vehicle_journey)
+        val byMission = linkedMapOf<String, Triple<String?, String, String?>>() // clé -> (mission, circulation, direction affichée)
         for (d in departures) {
             val vj = d.links.firstOrNull { it.type == "vehicle_journey" }?.id ?: continue
             val mission = d.display?.headsign?.trim()?.takeIf { it.isNotEmpty() }
             val k = mission ?: ("dir:" + d.display?.direction.orEmpty())
-            if (k !in byMission) byMission[k] = mission to vj
+            if (k !in byMission) byMission[k] = Triple(mission, vj, d.display?.direction)
         }
-        byMission.values.take(MAX_MISSIONS).map { (mission, vjId) ->
+        byMission.values.take(MAX_MISSIONS).map { (mission, vjId, displayDirection) ->
             async {
                 val vj = runCatching { api.vehicleJourney(key, vjId).vehicleJourneys.firstOrNull() }.getOrNull()
                     ?: return@async null
@@ -196,8 +196,11 @@ class PrimRepository(private val api: PrimApi = Network.primApi) {
                 val after = vj.stopTimes.drop(idx + 1).mapNotNull { it.stopPoint }
                 if (after.isEmpty()) return@async null
                 val names = after.map { sp -> sp.stopArea?.name?.takeIf { it.isNotBlank() } ?: sp.name }.filter { it.isNotBlank() }
+                // La direction affichée donne le vrai terminus même quand la circulation est découpée
+                // (ex. RER B : changement d'exploitant à Gare du Nord).
                 RouteInfo(
-                    terminus = names.lastOrNull().orEmpty(),
+                    terminus = displayDirection?.replace(Regex("""\s*\([^)]*\)\s*$"""), "")?.takeIf { it.isNotBlank() }
+                        ?: names.lastOrNull().orEmpty(),
                     towardsParis = towardsParis(after, stationDistance),
                     stationsAfter = names.associateWith { setOfNotNull(mission) },
                     missions = setOfNotNull(mission),

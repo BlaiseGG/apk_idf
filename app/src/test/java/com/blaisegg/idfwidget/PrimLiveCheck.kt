@@ -28,6 +28,18 @@ class PrimLiveCheck {
         "Grigny Centre", "Juvisy", "Massy Palaiseau", "Gare de l'Est", "Marne-la-Vallée Chessy",
     )
 
+    /** Pour un trajet sans passage : que renvoie vraiment le temps réel pour chaque quai ? */
+    private suspend fun diagnose(key: String, trajet: Trajet) {
+        val api = com.blaisegg.idfwidget.data.Network.primApi
+        val refs = trajet.monitoringRefs + IdMapper.stopAreaRef(trajet.stopAreaId)
+        for (ref in refs) {
+            val r = runCatching { api.stopMonitoring(key, ref) }
+            val visits = r.getOrNull()?.siri?.serviceDelivery?.deliveries.orEmpty().flatMap { it.visits }
+            val lineCodes = visits.mapNotNull { IdMapper.lineCode(it.journey?.lineRef?.value) }.groupingBy { it }.eachCount()
+            log("      diag $ref -> ${r.exceptionOrNull()?.message ?: "${visits.size} visites, lignes=$lineCodes"} (attendu ${IdMapper.lineCode(trajet.lineId)})")
+        }
+    }
+
     @Test
     fun report() = runBlocking {
         val key = System.getenv("PRIM_API_KEY").orEmpty()
@@ -74,6 +86,7 @@ class PrimLiveCheck {
                 )
                 val flag = if (live.isFailure || las.isFailure || (live.getOrNull()?.isEmpty() == true)) "!!" else "ok"
                 log("   $flag ${line.category.label} ${line.code}$via | $dirText | $liveText")
+                if (live.getOrNull()?.isEmpty() == true) diagnose(key, trajet)
                 delay(300)
             }
             log("   bus: $bus lignes")
