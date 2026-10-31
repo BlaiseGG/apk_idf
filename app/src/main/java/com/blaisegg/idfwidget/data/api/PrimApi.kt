@@ -1,0 +1,70 @@
+package com.blaisegg.idfwidget.data.api
+
+import retrofit2.http.GET
+import retrofit2.http.Header
+import retrofit2.http.Path
+import retrofit2.http.Query
+
+/**
+ * API PRIM Île-de-France Mobilités.
+ * Base : https://prim.iledefrance-mobilites.fr/marketplace/
+ * Authentification : en-tête HTTP `apikey`.
+ */
+interface PrimApi {
+
+    // ---- Référentiel (Navitia via PRIM) ----
+
+    @GET("v2/navitia/places")
+    suspend fun searchPlaces(
+        @Header("apikey") apiKey: String,
+        @Query("q") query: String,
+        @Query("type[]") type: String = "stop_area",
+        @Query("count") count: Int = 20,
+    ): PlacesResponse
+
+    @GET("v2/navitia/coord/{lon};{lat}/places_nearby")
+    suspend fun placesNearby(
+        @Header("apikey") apiKey: String,
+        @Path("lon") lon: Double,
+        @Path("lat") lat: Double,
+        @Query("type[]") type: String = "stop_area",
+        @Query("distance") distance: Int = 1000,
+        @Query("count") count: Int = 25,
+    ): PlacesNearbyResponse
+
+    @GET("v2/navitia/stop_areas/{stopArea}/lines")
+    suspend fun linesOfStopArea(
+        @Header("apikey") apiKey: String,
+        @Path("stopArea") stopAreaId: String,
+        @Query("count") count: Int = 100,
+        @Query("depth") depth: Int = 1,
+    ): LinesResponse
+
+    @GET("v2/navitia/stop_areas/{stopArea}/lines/{line}/routes")
+    suspend fun routes(
+        @Header("apikey") apiKey: String,
+        @Path("stopArea") stopAreaId: String,
+        @Path("line") lineId: String,
+        @Query("count") count: Int = 100,
+    ): RoutesResponse
+
+    @GET("v2/navitia/stop_areas/{stopArea}/lines/{line}/stop_points")
+    suspend fun stopPoints(
+        @Header("apikey") apiKey: String,
+        @Path("stopArea") stopAreaId: String,
+        @Path("line") lineId: String,
+        @Query("count") count: Int = 50,
+    ): StopPointsResponse
+
+    // ---- Temps réel (SIRI-Lite, requête unitaire) ----
+
+    @GET("stop-monitoring")
+    suspend fun stopMonitoring(
+        @Header("apikey") apiKey: String,
+        @Query("MonitoringRef") monitoringRef: String,
+    ): SiriResponse
+
+    companion object {
+        const val BASE_URL = "https://prim.iledefrance-mobilites.fr/marketplace/"
+    }
+}

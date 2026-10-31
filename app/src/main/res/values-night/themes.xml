@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.IdfWidget" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/idfm_navy</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

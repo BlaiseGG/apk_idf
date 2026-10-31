@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Panneau de quai stylisé -->
+    <path android:fillColor="#FFCD00"
+        android:pathData="M30,38h48a4,4 0,0 1,4 4v24a4,4 0,0 1,-4 4h-48a4,4 0,0 1,-4 -4v-24a4,4 0,0 1,4 -4z"/>
+    <path android:fillColor="#0B1F3A"
+        android:pathData="M34,46h16v4h-16zM34,54h40v4h-40zM34,62h28v3h-28z"/>
+    <path android:fillColor="#FFCD00" android:pathData="M52,70h4v10h-4z"/>
+</vector>
