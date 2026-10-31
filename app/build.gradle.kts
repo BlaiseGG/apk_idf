@@ -49,6 +49,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    testOptions {
+        unitTests.all {
+            it.testLogging.showStandardStreams = true
+            it.environment("PRIM_API_KEY", System.getenv("PRIM_API_KEY") ?: "")
+        }
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -67,6 +73,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)

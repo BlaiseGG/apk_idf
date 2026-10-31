@@ -1,0 +1,30 @@
+name: Contrôle données PRIM
+
+# Fait tourner la logique de l'app sur de vraies gares (quota PRIM : lancé seulement
+# quand le contrôle ou la logique de données change, ou à la demande).
+on:
+  push:
+    paths:
+      - "app/src/test/**"
+      - "app/src/main/java/com/blaisegg/idfwidget/data/**"
+      - ".github/workflows/check-prim.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Contrôle sur les vraies données
+        env:
+          PRIM_API_KEY: ${{ secrets.PRIM_API_KEY }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testDebugUnitTest --tests '*PrimLiveCheck*' 2>&1 | tee check.log
+          echo "================ RAPPORT ================"
+          grep 'CHECK|' check.log || true
