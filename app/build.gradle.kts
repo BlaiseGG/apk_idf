@@ -17,12 +17,25 @@ android {
         versionName = "1.0.0"
     }
 
+    // Signature fixe (sinon chaque compilation GitHub a une clé différente
+    // et Android refuse d'installer la mise à jour par-dessus l'ancienne version).
+    signingConfigs {
+        create("fixed") {
+            storeFile = file("debug.keystore")
+            storePassword = "quaiquai"
+            keyAlias = "quai"
+            keyPassword = "quaiquai"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signé avec la clé debug pour pouvoir installer l'APK release sans configuration.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("fixed")
         }
     }
     compileOptions {
