@@ -5,7 +5,7 @@ name: Contrôle données PRIM
 on:
   push:
     paths:
-      - "app/src/test/**"
+      - "app/src/test/java/com/blaisegg/idfwidget/PrimLiveCheck.kt"
   workflow_dispatch:
 
 jobs:
