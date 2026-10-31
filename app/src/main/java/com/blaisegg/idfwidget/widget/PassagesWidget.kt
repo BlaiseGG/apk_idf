@@ -16,6 +16,7 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
+import androidx.glance.action.Action
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.CircularProgressIndicator
@@ -35,6 +36,7 @@ import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
+import androidx.glance.layout.RowScope
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
@@ -81,8 +83,22 @@ class PassagesWidget : GlanceAppWidget() {
 @Composable
 private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
     val context = LocalContext.current
-    val compact = LocalSize.current.height < 100.dp
+    val size = LocalSize.current
+    val compact = size.height < 100.dp
+    // Assez de hauteur : rangée de gros boutons en bas. Sinon : boutons agrandis dans l'en-tête.
+    val bottomBar = size.height >= 125.dp
+    val showLabels = size.width >= 230.dp
     val status = prefs.status()
+
+    val refreshAction = actionRunCallback<RefreshAction>()
+    val liveActive = LiveTracker.isActive(context)
+    val liveAction = if (LiveTracker.hasPermission(context)) {
+        actionRunCallback<ToggleLiveAction>()
+    } else {
+        // La permission de notification ne peut être demandée que depuis l'app.
+        actionStartActivity(MainActivity.startLiveIntent(context, appWidgetId))
+    }
+    val settingsAction = actionStartActivity(configIntent(context, appWidgetId))
 
     Column(
         modifier = GlanceModifier
@@ -90,7 +106,7 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
             .background(Navy)
             .cornerRadius(16.dp)
             .padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 10.dp)
-            .clickable(actionRunCallback<RefreshAction>()),
+            .clickable(refreshAction),
         verticalAlignment = Alignment.Vertical.CenterVertically,
     ) {
         if (status == Status.NOT_CONFIGURED) {
@@ -98,7 +114,7 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
             return@Column
         }
 
-        // ---- En-tête : pastille ligne + arrêt / direction + actions ----
+        // ---- En-tête : pastille ligne + arrêt / direction ----
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Vertical.CenterVertically) {
             LineBadge(
                 code = prefs[WidgetKeys.lineCode].orEmpty(),
@@ -118,42 +134,17 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
                     maxLines = 1,
                 )
             }
-            if (status == Status.LOADING) {
-                CircularProgressIndicator(modifier = GlanceModifier.size(20.dp), color = ColorProvider(Yellow))
-            } else {
-                Image(
-                    provider = ImageProvider(R.drawable.ic_refresh),
-                    contentDescription = "Rafraîchir",
-                    colorFilter = ColorFilter.tint(ColorProvider(White)),
-                    modifier = GlanceModifier.size(22.dp).clickable(actionRunCallback<RefreshAction>()),
-                )
+            if (!bottomBar) {
+                // Petit widget : boutons carrés de 40 dp, bien espacés.
+                HeaderButton(R.drawable.ic_refresh, "Rafraîchir", White, refreshAction, loading = status == Status.LOADING)
+                Spacer(GlanceModifier.width(6.dp))
+                HeaderButton(R.drawable.ic_live, "Suivi en direct", if (liveActive) Yellow else White, liveAction)
+                Spacer(GlanceModifier.width(6.dp))
+                HeaderButton(R.drawable.ic_settings, "Configurer", White, settingsAction)
             }
-            Spacer(GlanceModifier.width(10.dp))
-            // Suivi en direct dans la barre d'état (jaune = actif).
-            val liveActive = LiveTracker.isActive(context)
-            Image(
-                provider = ImageProvider(R.drawable.ic_live),
-                contentDescription = "Suivi en direct",
-                colorFilter = ColorFilter.tint(ColorProvider(if (liveActive) Yellow else Grey)),
-                modifier = GlanceModifier.size(20.dp).clickable(
-                    if (LiveTracker.hasPermission(context)) {
-                        actionRunCallback<ToggleLiveAction>()
-                    } else {
-                        // La permission de notification ne peut être demandée que depuis l'app.
-                        actionStartActivity(MainActivity.startLiveIntent(context, appWidgetId))
-                    },
-                ),
-            )
-            Spacer(GlanceModifier.width(10.dp))
-            Image(
-                provider = ImageProvider(R.drawable.ic_settings),
-                contentDescription = "Configurer",
-                colorFilter = ColorFilter.tint(ColorProvider(Grey)),
-                modifier = GlanceModifier.size(20.dp).clickable(actionStartActivity(configIntent(context, appWidgetId))),
-            )
         }
 
-        if (!compact) Spacer(GlanceModifier.height(6.dp))
+        if (!compact) Spacer(GlanceModifier.height(4.dp))
 
         // ---- Zone principale : "02 min - 10 min" ----
         val (mainText, mainColor) = mainLine(prefs, status)
@@ -171,12 +162,90 @@ private fun WidgetContent(prefs: Preferences, appWidgetId: Int) {
 
         // ---- Pied : heure de mise à jour / état ----
         if (!compact) {
-            Spacer(GlanceModifier.height(4.dp))
             Text(
                 text = footer(prefs, status),
                 modifier = GlanceModifier.fillMaxWidth(),
                 style = TextStyle(color = ColorProvider(Grey), fontSize = 11.sp, textAlign = TextAlign.Center),
                 maxLines = 1,
+            )
+        }
+
+        // ---- Rangée de gros boutons ----
+        if (bottomBar) {
+            Spacer(GlanceModifier.height(6.dp))
+            Row(modifier = GlanceModifier.fillMaxWidth()) {
+                BarButton(
+                    R.drawable.ic_refresh, if (status == Status.LOADING) "…" else "Actualiser", White,
+                    refreshAction, showLabels, loading = status == Status.LOADING,
+                )
+                Spacer(GlanceModifier.width(8.dp))
+                BarButton(
+                    R.drawable.ic_live, if (liveActive) "Suivi actif" else "Suivi", if (liveActive) Yellow else White,
+                    liveAction, showLabels,
+                )
+                Spacer(GlanceModifier.width(8.dp))
+                BarButton(R.drawable.ic_settings, "Réglages", White, settingsAction, showLabels)
+            }
+        }
+    }
+}
+
+/** Bouton large (1/3 de la largeur, 40 dp de haut) pour la rangée du bas. */
+@Composable
+private fun RowScope.BarButton(
+    icon: Int,
+    label: String,
+    tint: Color,
+    action: Action,
+    showLabel: Boolean,
+    loading: Boolean = false,
+) {
+    Row(
+        modifier = GlanceModifier
+            .defaultWeight()
+            .height(40.dp)
+            .background(NavyLight)
+            .cornerRadius(12.dp)
+            .clickable(action),
+        verticalAlignment = Alignment.Vertical.CenterVertically,
+        horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(modifier = GlanceModifier.size(18.dp), color = ColorProvider(Yellow))
+        } else {
+            Image(
+                provider = ImageProvider(icon),
+                contentDescription = label,
+                colorFilter = ColorFilter.tint(ColorProvider(tint)),
+                modifier = GlanceModifier.size(20.dp),
+            )
+        }
+        if (showLabel) {
+            Spacer(GlanceModifier.width(6.dp))
+            Text(
+                text = label,
+                style = TextStyle(color = ColorProvider(tint), fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** Bouton carré de 40 dp pour l'en-tête des petits widgets. */
+@Composable
+private fun HeaderButton(icon: Int, description: String, tint: Color, action: Action, loading: Boolean = false) {
+    Box(
+        modifier = GlanceModifier.size(40.dp).background(NavyLight).cornerRadius(12.dp).clickable(action),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(modifier = GlanceModifier.size(18.dp), color = ColorProvider(Yellow))
+        } else {
+            Image(
+                provider = ImageProvider(icon),
+                contentDescription = description,
+                colorFilter = ColorFilter.tint(ColorProvider(tint)),
+                modifier = GlanceModifier.size(22.dp),
             )
         }
     }
@@ -240,8 +309,8 @@ private fun footer(prefs: Preferences, status: Status): String {
     }
     return when (status) {
         Status.LOADING -> "Actualisation…"
-        Status.ERROR -> if (updated != null) "Échec · dernière maj $updated · toucher pour réessayer" else "Toucher pour réessayer"
-        else -> if (updated != null) "Mis à jour à $updated · toucher pour rafraîchir" else ""
+        Status.ERROR -> if (updated != null) "Échec · dernière maj $updated" else "Toucher pour réessayer"
+        else -> if (updated != null) "Mis à jour à $updated" else ""
     }
 }
 
