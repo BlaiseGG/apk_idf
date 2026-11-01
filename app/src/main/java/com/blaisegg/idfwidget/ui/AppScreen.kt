@@ -342,70 +342,80 @@ private fun hexColor(hex: String, fallback: Color): Color =
 
 // ------------------------------------------------------------------ Directions
 
+private val TOWN = Regex("""^(.*?)\s*\(([^)]*)\)\s*$""")
+
+/** « Ferme Neuve (Grigny) » -> (« Ferme Neuve », « Grigny »). */
+private fun splitTown(label: String): Pair<String, String?> =
+    TOWN.find(label)?.let { it.groupValues[1] to it.groupValues[2] } ?: (label to null)
+
 @Composable
 private fun DirectionsList(choices: List<DirectionChoice>, onClick: (DirectionChoice?) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val paris = choices.filter { it.group == DirectionGroup.PARIS }
     val stations = choices.filter { it.group != DirectionGroup.PARIS }
-    val q = IdMapper.normalize(query)
-    val shown = if (q.isEmpty()) stations else stations.filter { IdMapper.normalize(it.label).contains(q) }
+    val words = query.split(' ', '-', '\'').map(IdMapper::normalize).filter { it.isNotEmpty() }
+    // Recherche sur le nom de l'arrêt ET la commune (ex. « grigny » -> tous les arrêts de Grigny).
+    val shown = stations.filter { c -> words.all { IdMapper.normalize(c.label).contains(it) } }
+    // Classement par commune, puis par nom d'arrêt.
+    val byTown = shown.groupBy { splitTown(it.label).second ?: "Autres" }
+        .toSortedMap(compareBy { IdMapper.normalize(it) })
 
-    LazyColumn {
-        // 1. « Direction Paris » en premier, bien visible.
-        if (q.isEmpty()) {
-            items(paris) { choice ->
+    // Le champ de recherche est HORS de la liste : il garde le focus (et le clavier) pendant la frappe.
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Où allez-vous ? Arrêt ou ville (ex. Grigny)") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        LazyColumn(Modifier.fillMaxSize()) {
+            // « Direction Paris » en premier, bien visible.
+            if (words.isEmpty()) {
+                items(paris, key = { "paris" }) { choice ->
+                    ListItem(
+                        headlineContent = { Text("Direction Paris", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                        supportingContent = { Text("Tous les trains vers Paris (" + choice.targets.joinToString(", ") + ")") },
+                        leadingContent = { Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        modifier = Modifier.clickable { onClick(choice) },
+                    )
+                    HorizontalDivider()
+                }
+            }
+            byTown.forEach { (town, group) ->
+                item(key = "town-$town") { SectionHeader("$town · ${group.size} arrêt(s)") }
+                items(group.sortedBy { IdMapper.normalize(it.label) }, key = { "st-" + it.label }) { choice ->
+                    ListItem(
+                        headlineContent = { Text(splitTown(choice.label).first) },
+                        supportingContent = {
+                            val termini = choice.targets.filterNot { IdMapper.sameDirection(it, choice.label) }
+                            if (termini.isNotEmpty()) Text("Vers " + termini.joinToString(", "))
+                        },
+                        modifier = Modifier.clickable { onClick(choice) },
+                    )
+                    HorizontalDivider()
+                }
+            }
+            if (words.isNotEmpty() && shown.isEmpty()) {
+                item(key = "none") { Text("Aucun arrêt ni ville de cette ligne ne correspond.", modifier = Modifier.padding(16.dp)) }
+            }
+            if (choices.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        "Aucune direction trouvée pour l'instant (service terminé ?). Choisissez « Toutes directions ».",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            item(key = "all") {
                 ListItem(
-                    headlineContent = { Text("Direction Paris", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
-                    supportingContent = { Text("Tous les trains vers Paris (" + choice.targets.joinToString(", ") + ")") },
-                    leadingContent = { Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.clickable { onClick(choice) },
-                )
-                HorizontalDivider()
-            }
-        }
-        // 2. Recherche de la gare où l'on va.
-        item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Où allez-vous ? (ex. Grigny)") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-        }
-        if (stations.isNotEmpty()) {
-            item { SectionHeader(if (q.isEmpty()) "Toutes les gares desservies" else "${shown.size} gare(s) trouvée(s)") }
-        }
-        items(shown, key = { "st-" + it.label }) { choice ->
-            ListItem(
-                headlineContent = { Text(choice.label) },
-                supportingContent = {
-                    val termini = choice.targets.filterNot { IdMapper.normalize(it) == IdMapper.normalize(choice.label) }
-                    if (termini.isNotEmpty()) Text("Trains vers " + termini.joinToString(", "))
-                },
-                modifier = Modifier.clickable { onClick(choice) },
-            )
-            HorizontalDivider()
-        }
-        if (q.isNotEmpty() && shown.isEmpty()) {
-            item { Text("Aucune gare de cette ligne ne correspond.", modifier = Modifier.padding(16.dp)) }
-        }
-        if (choices.isEmpty()) {
-            item {
-                Text(
-                    "Aucune direction trouvée pour l'instant (service terminé ?). Choisissez « Toutes directions ».",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
+                    headlineContent = { Text("Toutes directions") },
+                    supportingContent = { Text("Afficher tous les passages de la ligne") },
+                    modifier = Modifier.clickable { onClick(null) },
                 )
             }
-        }
-        item {
-            ListItem(
-                headlineContent = { Text("Toutes directions") },
-                supportingContent = { Text("Afficher tous les passages de la ligne") },
-                modifier = Modifier.clickable { onClick(null) },
-            )
         }
     }
 }

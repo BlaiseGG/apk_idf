@@ -201,7 +201,7 @@ class PrimRepository(
             RouteInfo(
                 terminus = after.last().shortName,
                 towardsParis = after.minOf { km(it.lat, it.lon) } < hereDistance - 1.0,
-                stationsAfter = after.associate { it.shortName to missions },
+                stationsAfter = after.associate { it.name to missions }, // « Ferme Neuve (Grigny) » : la commune sert au tri et à la recherche
                 missions = missions,
             )
         }
