@@ -22,6 +22,10 @@ class Prefs(context: Context) {
         get() = sp.getFloat("radius", 150f)
         set(v) = sp.edit().putFloat("radius", v).apply()
 
+    var address: String
+        get() = sp.getString("address", "") ?: ""
+        set(v) = sp.edit().putString("address", v).apply()
+
     var notifyOnExit: Boolean
         get() = sp.getBoolean("notify_exit", false)
         set(v) = sp.edit().putBoolean("notify_exit", v).apply()

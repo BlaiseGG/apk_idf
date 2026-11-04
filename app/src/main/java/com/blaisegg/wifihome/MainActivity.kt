@@ -6,6 +6,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +19,7 @@ import android.widget.Toast
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import java.util.Locale
 
 class MainActivity : Activity() {
 
@@ -25,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var radius: EditText
     private lateinit var notifyExit: CheckBox
+    private lateinit var address: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +38,8 @@ class MainActivity : Activity() {
         status = findViewById(R.id.status)
         radius = findViewById(R.id.radius)
         notifyExit = findViewById(R.id.notifyExit)
+        address = findViewById(R.id.address)
+        address.setText(prefs.address)
 
         radius.setText(prefs.radius.toInt().toString())
         notifyExit.isChecked = prefs.notifyOnExit
@@ -43,6 +48,8 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnPermissions).setOnClickListener { requestForegroundPermissions() }
         findViewById<Button>(R.id.btnBackground).setOnClickListener { requestBackgroundPermission() }
         findViewById<Button>(R.id.btnSetHome).setOnClickListener { saveCurrentLocationAsHome() }
+        findViewById<Button>(R.id.btnSetAddress).setOnClickListener { saveAddressAsHome() }
+        findViewById<Button>(R.id.btnOverlay).setOnClickListener { requestOverlayPermission() }
         findViewById<Button>(R.id.btnTest).setOnClickListener {
             if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS) &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -73,11 +80,13 @@ class MainActivity : Activity() {
             hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         val notif = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+        val overlay = Settings.canDrawOverlays(this)
         fun mark(ok: Boolean) = if (ok) "✅" else "❌"
         val home = if (prefs.enabled) {
-            "✅ Maison enregistrée (%.5f, %.5f, %d m)".format(
-                prefs.latitude, prefs.longitude, prefs.radius.toInt()
-            )
+            val where = prefs.address.ifBlank {
+                "%.5f, %.5f".format(prefs.latitude, prefs.longitude)
+            }
+            "✅ Maison : $where (${prefs.radius.toInt()} m)"
         } else {
             "❌ Maison pas encore enregistrée"
         }
@@ -85,6 +94,7 @@ class MainActivity : Activity() {
             ${mark(fine)} Localisation
             ${mark(bg)} Localisation « Toujours »
             ${mark(notif)} Notifications
+            ${mark(overlay)} Alerte plein écran
             $home
         """.trimIndent()
     }
@@ -139,11 +149,7 @@ class MainActivity : Activity() {
             toast("Fais d'abord les étapes 1 et 2")
             return
         }
-        val r = radius.text.toString().toFloatOrNull()
-        if (r == null || r < 50f) {
-            toast("Rayon minimum : 50 m (100–200 m conseillé)")
-            return
-        }
+        val r = readRadius() ?: return
         toast("Recherche de ta position…")
         LocationServices.getFusedLocationProviderClient(this)
             .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
@@ -152,23 +158,90 @@ class MainActivity : Activity() {
                     toast("Position introuvable, active le GPS et réessaie")
                     return@addOnSuccessListener
                 }
-                prefs.latitude = location.latitude
-                prefs.longitude = location.longitude
-                prefs.radius = r
-                val task = GeofenceHelper.register(this)
-                if (task == null) {
-                    toast("Permissions manquantes")
-                    return@addOnSuccessListener
-                }
-                task.addOnSuccessListener {
-                    prefs.enabled = true
-                    refreshStatus()
-                    toast("Maison enregistrée 👍")
-                }.addOnFailureListener { e ->
-                    toast("Erreur : ${e.message}")
-                }
+                prefs.address = ""
+                saveHome(location.latitude, location.longitude, r)
             }
             .addOnFailureListener { e -> toast("Erreur de localisation : ${e.message}") }
+    }
+
+    /** Looks up the typed address and uses it as home. */
+    @Suppress("DEPRECATION")
+    private fun saveAddressAsHome() {
+        if (!GeofenceHelper.hasLocationPermissions(this)) {
+            toast("Fais d'abord les étapes 1 et 2")
+            return
+        }
+        val r = readRadius() ?: return
+        val text = address.text.toString().trim()
+        if (text.isEmpty()) {
+            toast("Écris ton adresse d'abord")
+            return
+        }
+        if (!Geocoder.isPresent()) {
+            toast("Recherche d'adresse indisponible sur ce téléphone")
+            return
+        }
+        toast("Recherche de l'adresse…")
+        Thread {
+            val result = try {
+                Geocoder(this, Locale.FRANCE).getFromLocationName(text, 1)?.firstOrNull()
+            } catch (e: Exception) {
+                null
+            }
+            runOnUiThread {
+                if (result == null) {
+                    toast("Adresse introuvable (vérifie ta connexion et l'orthographe)")
+                } else {
+                    prefs.address = text
+                    saveHome(result.latitude, result.longitude, r)
+                }
+            }
+        }.start()
+    }
+
+    private fun readRadius(): Float? {
+        val r = radius.text.toString().toFloatOrNull()
+        if (r == null || r < 50f) {
+            toast("Rayon minimum : 50 m (100–200 m conseillé)")
+            return null
+        }
+        return r
+    }
+
+    private fun saveHome(lat: Double, lng: Double, r: Float) {
+        prefs.latitude = lat
+        prefs.longitude = lng
+        prefs.radius = r
+        val task = GeofenceHelper.register(this)
+        if (task == null) {
+            toast("Permissions manquantes")
+            return
+        }
+        task.addOnSuccessListener {
+            prefs.enabled = true
+            refreshStatus()
+            toast("Maison enregistrée 👍")
+        }.addOnFailureListener { e ->
+            toast("Erreur : ${e.message}")
+        }
+    }
+
+    private fun requestOverlayPermission() {
+        AlertDialog.Builder(this)
+            .setTitle("Alerte plein écran")
+            .setMessage(
+                "Pour que l'alerte s'affiche en grand dès ton arrivée, active " +
+                    "« Afficher par-dessus les autres applis » pour Wi-Fi Maison."
+            )
+            .setPositiveButton("OK") { _, _ ->
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.fromParts("package", packageName, null)
+                    )
+                )
+            }
+            .show()
     }
 
     override fun onRequestPermissionsResult(

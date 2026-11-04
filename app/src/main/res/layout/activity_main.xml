@@ -19,6 +19,18 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="Adresse de la maison" />
+
+        <EditText
+            android:id="@+id/address"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="ex : 12 rue de la Paix, 75002 Paris"
+            android:inputType="textPostalAddress" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Rayon autour de la maison (mètres)" />
 
         <EditText
@@ -48,10 +60,22 @@
             android:text="2. Autoriser la localisation « Toujours »" />
 
         <Button
+            android:id="@+id/btnOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="3. Autoriser l'alerte plein écran" />
+
+        <Button
+            android:id="@+id/btnSetAddress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="4. Enregistrer l'adresse ci-dessus" />
+
+        <Button
             android:id="@+id/btnSetHome"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="3. Je suis chez moi : enregistrer cette position" />
+            android:text="…ou : je suis chez moi, utiliser ma position" />
 
         <Button
             android:id="@+id/btnTest"
